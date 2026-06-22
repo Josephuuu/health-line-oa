@@ -50,6 +50,9 @@ async function handleEvent(event) {
     .select('*')
     .ilike('name', `%${userMessage}%`);
 
+  console.log('Query pattern:', `%${userMessage}%`);
+  console.log('Data length:', data ? data.length : 'null');
+  console.log('Full error:', JSON.stringify(error));
   console.log('Search result:', data);
   console.log('Error:', error);
 

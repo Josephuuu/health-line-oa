@@ -48,7 +48,7 @@ async function handleEvent(event) {
   const { data, error } = await supabase
     .from('menu')
     .select('*')
-    .ilike('name', `%${userMessage}%`);
+    .filter('name', 'ilike', `%${userMessage}%`);
 
   console.log('Query pattern:', `%${userMessage}%`);
   console.log('Data length:', data ? data.length : 'null');

@@ -12,6 +12,7 @@ console.log('SECRET:', process.env.LINE_CHANNEL_SECRET ? 'OK' : 'MISSING');
 console.log('TOKEN:', process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'OK' : 'MISSING');
 console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? 'OK' : 'MISSING');
 console.log('SUPABASE_KEY:', process.env.SUPABASE_KEY ? 'OK' : 'MISSING');
+console.log('SUPABASE_URL value:', process.env.SUPABASE_URL);
 
 const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: config.channelAccessToken,

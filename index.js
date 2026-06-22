@@ -43,6 +43,7 @@ async function handleEvent(event) {
 
   const userMessage = event.message.text.trim();
   console.log('User typed:', userMessage);
+  console.log('User typed (hex):', Buffer.from(userMessage).toString('hex'));
 
   const { data, error } = await supabase
     .from('menu')

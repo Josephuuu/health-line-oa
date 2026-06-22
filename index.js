@@ -46,9 +46,7 @@ async function handleEvent(event) {
   console.log('User typed (hex):', Buffer.from(userMessage).toString('hex'));
 
   const { data, error } = await supabase
-    .from('menu')
-    .select('*')
-    .filter('name', 'ilike', `%${userMessage}%`);
+    .rpc('search_menu', { search_term: userMessage });
 
   console.log('Query pattern:', `%${userMessage}%`);
   console.log('Data length:', data ? data.length : 'null');

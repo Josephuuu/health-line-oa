@@ -45,14 +45,12 @@ async function handleEvent(event) {
   console.log('User typed:', userMessage);
   console.log('User typed (hex):', Buffer.from(userMessage).toString('hex'));
 
-  const { data, error } = await supabase
+  const { data, error, status, statusText } = await supabase
     .rpc('search_menu', { search_term: userMessage });
 
-  console.log('Query pattern:', `%${userMessage}%`);
-  console.log('Data length:', data ? data.length : 'null');
-  console.log('Full error:', JSON.stringify(error));
-  console.log('Search result:', data);
-  console.log('Error:', error);
+  console.log('Status:', status, statusText);
+  console.log('Data:', JSON.stringify(data));
+  console.log('Error:', JSON.stringify(error));
 
   if (error || !data || data.length === 0) {
     return client.replyMessage({

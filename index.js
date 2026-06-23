@@ -47,20 +47,54 @@ async function handleEvent(event) {
   let currentContext = stateData && stateData.context ? stateData.context : {};
 
   if (!stateData) {
-    await supabase.from('user_states').insert({ user_id: userId, state: 'MAIN_MENU', context: {} });
+    // บันทึกเข้า database ครั้งแรก บังคับเซ็ต welcome_seen เป็น false ล่วงหน้า
+    await supabase.from('user_states').insert({ user_id: userId, state: 'MAIN_MENU', context: { welcome_seen: false } });
+    currentContext = { welcome_seen: false };
   }
 
   // 2. [GLOBAL COMMANDS] ระบบคำสั่งลัดและนำทางเบื้องต้น
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก') {
-    await supabase.from('user_states').upsert({ user_id: userId, state: 'MAIN_MENU', context: {} }, { onConflict: 'user_id' });
+    // ตรวจสอบว่าเคยเห็นข้อความต้อนรับครั้งแรกหรือยัง
+    const hasSeenWelcome = currentContext.welcome_seen === true;
+    
+    // อัปเดต state กลับหน้าหลัก แต่ยังคงจำค่า welcome_seen ไว้ว่าเป็น true แล้ว
+    await supabase.from('user_states').upsert({ 
+      user_id: userId, 
+      state: 'MAIN_MENU', 
+      context: { welcome_seen: true } 
+    }, { onConflict: 'user_id' });
+
+    let replyText = "";
+    if (!hasSeenWelcome) {
+      // แสดงเฉพาะครั้งแรกสุดที่เจอกัน
+      replyText = 'กลับสู่หน้าหลักแล้วครับ\n🤖 กรุณาเลือกฟีเจอร์จากเมนูด้านล่าง หรือพิมพ์คำว่า "สุขภาพจิต" เพื่อเริ่มต้นได้เลยครับ!';
+    } else {
+      // แสดงในครั้งต่อๆ ไป (สั้น กระชับ เป็นระเบียบ)
+      replyText = 'กลับสู่หน้าหลักแล้วครับ กรุณาเลือกฟีเจอร์จากเมนูด้านล่าง หรือพิมพ์เลือกเมนูที่ต้องการได้เลยครับ:\n\n' +
+                  '1. ทำแบบทดสอบสุขภาพจิต\n' +
+                  '2. ภารกิจสุขภาพประจำวัน';
+    }
+
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [{ type: 'text', text: 'กลับสู่หน้าหลักแล้วครับ\n🤖 กรุณาเลือกฟีเจอร์จากเมนูด้านล่าง หรือพิมพ์คำว่า "สุขภาพจิต" เพื่อเริ่มต้นได้เลยครับ!' }],
+      messages: [{ type: 'text', text: replyText }],
     });
   }
 
+  // แก้ไขจุดบกพร่อง: พิมพ์ "สุขภาพจิต" ก็ต้องเช็ก Profile ก่อนข้ามไปทำข้อสอบ
   if (userMessage === 'สุขภาพจิต' || userMessage === 'เริ่มทำแบบทดสอบสุขภาพจิต') {
-    const initialContext = { current_q: 1, scores: {} };
+    let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
+    if (!profile) {
+      // ถ้าพิมพ์มาแต่ยังไม่มีโปรไฟล์ ให้โยนไปกรอกประวัติสัดส่วนร่างกายก่อน ห้ามข้ามสเตจ
+      await supabase.from('user_states').upsert({ user_id: userId, state: 'ASK_GENDER', context: { welcome_seen: true } }, { onConflict: 'user_id' });
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: 'ยินดีต้อนรับครับ! ก่อนเริ่มต้นทำแบบทดสอบสุขภาพจิต ขอข้อมูลส่วนตัวเพื่อนำไปประมวลผลระบบภารกิจสุขภาพควบคู่ไปด้วยกันนะครับ\n\nโปรดพิมพ์เพศของคุณ (ชาย หรือ หญิง)' }],
+      });
+    }
+
+    // ถ้ามีโปรไฟล์แล้ว ให้เข้าสู่แบบทดสอบได้ตามปกติ
+    const initialContext = { current_q: 1, scores: {}, welcome_seen: true };
     await supabase.from('user_states').upsert({ user_id: userId, state: 'MENTAL_HEALTH_TEST', context: initialContext }, { onConflict: 'user_id' });
     return sendMentalQuestion(event, 1);
   }
@@ -68,18 +102,18 @@ async function handleEvent(event) {
   if (userMessage === 'ภารกิจสุขภาพประจำวัน') {
     let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
     if (!profile) {
-      // ถ้าเปิดมาครั้งแรกและไม่มีข้อมูล ให้บังคับ Onboarding กรอกข้อมูลประวัติก่อน
-      await supabase.from('user_states').upsert({ user_id: userId, state: 'ASK_GENDER', context: {} }, { onConflict: 'user_id' });
+      // บังคับกรอกประวัติก่อน
+      await supabase.from('user_states').upsert({ user_id: userId, state: 'ASK_GENDER', context: { welcome_seen: true } }, { onConflict: 'user_id' });
       return client.replyMessage({
         replyToken: event.replyToken,
         messages: [{ type: 'text', text: 'ยินดีต้อนรับครับ! มาร่วมดูแลสุขภาพและจิตใจไปด้วยกันนะ ก่อนอื่นขอข้อมูลเพื่อประมวลผลสุขภาพก่อนครับ\n\nโปรดพิมพ์เพศของคุณ (ชาย หรือ หญิง)' }],
       });
     }
 
-    // หากมีโปรไฟล์แล้ว แต่ยังไม่เคยทำแบบทดสอบใหญ่ บังคับยิงเข้าหน้าทำแบบทดสอบและรวมร่างข้อความทันที
+    // หากมีโปรไฟล์แล้ว แต่ยังไม่เคยทำแบบทดสอบจิตใจ บังคับทำแบบทดสอบก่อนเปิดแดชบอร์ด
     let { data: checkScore } = await supabase.from('mental_health_scores').select('*').eq('user_id', userId).limit(1);
     if (!checkScore || checkScore.length === 0) {
-      const initialContext = { current_q: 1, scores: {} };
+      const initialContext = { current_q: 1, scores: {}, welcome_seen: true };
       await supabase.from('user_states').upsert({ user_id: userId, state: 'MENTAL_HEALTH_TEST', context: initialContext }, { onConflict: 'user_id' });
       
       const firstQuestion = MENTAL_QUESTIONS.find(q => q.id === 1);
@@ -103,11 +137,11 @@ async function handleEvent(event) {
       });
     }
     
-    await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: {} }, { onConflict: 'user_id' });
+    await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: { welcome_seen: true } }, { onConflict: 'user_id' });
     return showDailyDashboard(event, userId, profile);
   }
 
-  // 3. STATE ROUTING (ระบบจัดการสเตตัสกระบวนการ)
+  // 3. STATE ROUTING (ระบบจัดการสเตตัสกระบวนการกรอกประวัติ)
   switch (currentState) {
     case 'ASK_GENDER': {
       if (userMessage !== 'ชาย' && userMessage !== 'หญิง') {
@@ -156,22 +190,21 @@ async function handleEvent(event) {
       const water_goal = Math.round(weight * 33);
       let step_goal = (bmi < 18.5) ? 8000 : (bmi < 23) ? 10000 : (bmi < 25) ? 11000 : 7000;
 
-      // บันทึกข้อมูลสุขภาพลง Profiles
+      // บันทึกข้อมูลสุขภาพลง user_profiles จริงๆ
       await supabase.from('user_profiles').upsert({
         user_id: userId, gender, age, weight, height, bmi, bmr, tdee, water_goal, step_goal
       }, { onConflict: 'user_id' });
 
-      // ดึงคำถามสุขภาพจิตข้อ 1 มารอรวมร่าง
+      // ดึงคำถามสุขภาพจิตข้อ 1 มารอรวมร่างทำต่อทันที
       const firstQuestion = MENTAL_QUESTIONS.find(q => q.id === 1);
 
       let combinedText = `📝 บันทึกสัดส่วนร่างกายเรียบร้อยแล้วครับ!\n\n` +
-        `📊 สรุปค่าทางกายภาพ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n` +
-        `⚠️ เพื่อการดูแลที่สมบูรณ์แบบ ขั้นตอนถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น (55 ข้อ)" เพื่อประเมินความเสี่ยงและออกแบบการดูแลให้ตรงจุดครับ\n` +
+        `📊 สรุปค่าทางกายภาพของคุณ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n` +
+        `⚠️ ลำดับถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น" ทันที เพื่อประเมินจิตใจและเปิดใช้งานภารกิจประจำวันครับ\n` +
         `----------------------------------------\n\n` +
         `🧠 [แบบทดสอบสุขภาพจิต]\n\n${firstQuestion.text}\n\nโปรดเลือกคำตอบที่ตรงกับความรู้สึกของคุณมากที่สุดในช่วง 2 สัปดาห์ที่ผ่านมา:`;
       
-      // อัปเดตสถานะเปลี่ยนโหมดทำแบบทดสอบล่วงหน้า
-      const initialMentalContext = { current_q: 1, scores: {} };
+      const initialMentalContext = { current_q: 1, scores: {}, welcome_seen: true };
       await supabase.from('user_states').upsert({ 
         user_id: userId, 
         state: 'MENTAL_HEALTH_TEST', 
@@ -233,9 +266,9 @@ async function handleEvent(event) {
         });
 
         // 2. สลับสเตตัสใน Supabase ไปเป็นหน้าหลักแดชบอร์ด
-        await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: {} }, { onConflict: 'user_id' });
+        await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: { welcome_seen: true } }, { onConflict: 'user_id' });
         
-        // 3. ดึงหรือสร้างข้อมูล Progress ของวันนี้ ป้องกัน Logic บั๊กค้าง
+        // 3. ดึงข้อมูล Profile และสร้าง Progress ของวันนี้
         let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
         const todayStr = new Date().toISOString().split('T')[0];
         let { data: progress } = await supabase.from('daily_progress').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
@@ -245,7 +278,6 @@ async function handleEvent(event) {
           progress = newProg;
         }
 
-        // ป้องกัน Error หากโปรไฟล์ดึงไม่ขึ้น หรือความคืบหน้าไม่มีข้อมูลให้ใช้ Default ป้องกัน Bot Crash
         const water_goal = profile ? profile.water_goal : 2000;
         const step_goal = profile ? profile.step_goal : 10000;
         const currentWater = progress ? progress.water_intake : 0;
@@ -257,10 +289,9 @@ async function handleEvent(event) {
         const stretchPercent = Math.min((currentStretch / 3) * 100, 100);
         const totalSuccess = Math.round((waterPercent + stepPercent + stretchPercent) / 3);
 
-        // มหารวมร่างเนื้อหาผลลัพธ์ + สรุปปลดล็อกฟีเจอร์ + แดชบอร์ดจริง ส่งกลับหา User
         let finishCombinedText = `🎉 ทำแบบทดสอบสุขภาพจิตเสร็จสิ้นแล้ว!\n\n📊 คะแนนรวมของคุณ: ${totalScore} คะแนน\n🔍 ผลประเมิน: ${resultText}\n\n${adviceText}\n` +
           `----------------------------------------\n` +
-          `🏁 ระบบได้ปลดล็อกฟีเจอร์เรียบร้อยแล้ว! นี่คือแดชบอร์ดภารกิจประจำวันของคุณ มาร่วมทำภารกิจกันเถอะครับ 👇\n\n` +
+          `🏁 ระบบได้คำนวณสัดส่วนสถิติคุณเรียบร้อยแล้ว! นี่คือแดชบอร์ดภารกิจประจำวันเฉพาะคุณ มาร่วมทำภารกิจกันเถอะครับ 👇\n\n` +
           `🏃‍♂️ [แดชบอร์ดภารกิจประจำวัน]\n` +
           `🔥 ความสำเร็จรวม: ${totalSuccess}%\n\n` +
           `💧 1. การดื่มน้ำ: ${currentWater} / ${water_goal} ml\n` +
@@ -313,11 +344,14 @@ async function handleEvent(event) {
     }
   }
 
-  // Fallback กรณีเปิดหน้าหลักแล้วพิมพ์อย่างอื่นที่ระบบไม่รู้จัก
+  // Fallback หน้าหลัก
   if (currentState === 'MAIN_MENU') {
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [{ type: 'text', text: '🤖 กรุณาเลือกฟีเจอร์ที่ต้องการใช้งานจากเมนูด้านล่าง หรือพิมพ์คำว่า "สุขภาพจิต" เพื่อทำแบบทดสอบเริ่มต้นได้เลยครับ!' }]
+      messages: [{ 
+        type: 'text', 
+        text: 'กลับสู่หน้าหลักแล้วครับ กรุณาเลือกฟีเจอร์จากเมนูด้านล่าง หรือพิมพ์เลือกเมนูที่ต้องการได้เลยครับ:\n\n1. ทำแบบทดสอบสุขภาพจิต\n2. ภารกิจสุขภาพประจำวัน' 
+      }]
     });
   }
 }

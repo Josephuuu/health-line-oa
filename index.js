@@ -86,7 +86,7 @@ async function handleEvent(event) {
         messages: [{ type: 'text', text: '🔒 คุณยังไม่ได้ทำแบบทดสอบสุขภาพจิตเริ่มต้นประจำตัวเลยครับ ขอความกรุณาทำแบบทดสอบ 55 ข้อนี้ให้เสร็จก่อน เพื่อเปิดใช้งานระบบภารกิจประจำวันนะครับ เริ่มกันเลย!' }]
       }).then(() => sendMentalQuestion(event, 1));
     }
-    
+
     await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: {} }, { onConflict: 'user_id' });
     return showDailyDashboard(event, userId, profile);
   }
@@ -145,25 +145,40 @@ async function handleEvent(event) {
         user_id: userId, gender, age, weight, height, bmi, bmr, tdee, water_goal, step_goal
       }, { onConflict: 'user_id' });
 
-      let introText = `📝 บันทึกสัดส่วนร่างกายเรียบร้อยแล้วครับ!\n\n📊 สรุปค่าทางกายภาพ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n⚠️ เพื่อการดูแลที่สมบูรณ์แบบ ขั้นตอนถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น (55 ข้อ)" เพื่อประเมินความเสี่ยงก่อนเปิดระบบบันทึกภารกิจครับ เริ่มกันเลย!`;
+      // 🌟 1. ดึงข้อความคำถามข้อที่ 1 มารอไว้ก่อน
+      const firstQuestion = MENTAL_QUESTIONS.find(q => q.id === 1);
+
+      // 🌟 2. รวมร่างข้อความ: เอาสรุปสัดส่วนร่างกาย มารวมกับคำถามข้อแรกในกล่องข้อความเดียว
+      let combinedText = `📝 บันทึกสัดส่วนร่างกายเรียบร้อยแล้วครับ!\n\n` +
+        `📊 สรุปค่าทางกายภาพ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n` +
+        `⚠️ เพื่อการดูแลที่สมบูรณ์แบบ ขั้นตอนถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น (55 ข้อ)" เพื่อประเมินความเสี่ยงและออกแบบการดูแลให้ตรงจุดครับ\n` +
+        `----------------------------------------\n\n` +
+        `🧠 [แบบทดสอบสุขภาพจิต]\n\n${firstQuestion.text}\n\nโปรดเลือกคำตอบที่ตรงกับความรู้สึกของคุณมากที่สุดในช่วง 2 สัปดาห์ที่ผ่านมา:`;
       
-      // 🌟 [จุดแก้ไขหลัก]: เตรียมล้างไพ่เซ็ต Context สำหรับทำข้อสอบ 55 ข้อให้คลีน 100%
+      // 🌟 3. อัปเดตสถานะในเบสไปเป็นโหมดทำข้อสอบล่วงหน้า
       const initialMentalContext = { current_q: 1, scores: {} };
-      
-      // อัปเดตสถานะในเบสไปเป็นโหมดทำข้อสอบล่วงหน้าทันทีก่อนส่งข้อความตอบกลับ LINE
       await supabase.from('user_states').upsert({ 
         user_id: userId, 
         state: 'MENTAL_HEALTH_TEST', 
         context: initialMentalContext 
       }, { onConflict: 'user_id' });
 
-      // ส่งข้อความแจ้งสรุปสัดส่วนร่างกาย พร้อมตามด้วยส่งข้อคำถามข้อที่ 1 ทันทีแบบมีปุ่ม
+      // 🌟 4. ส่งข้อความรวมร่างที่มีปุ่ม Quick Reply ยิงออกไปพร้อมกันแบบเดี่ยว ๆ ชัวร์ 100%
       return client.replyMessage({ 
         replyToken: event.replyToken, 
-        messages: [
-          { type: 'text', text: introText }
-        ]
-      }).then(() => sendMentalQuestion(event, 1)); // สั่งฟังก์ชันส่งปุ่มทำงานต่อท้ายทันที
+        messages: [{
+          type: 'text',
+          text: combinedText,
+          quickReply: {
+            items: [
+              { type: 'action', action: { type: 'message', label: '❌ ไม่เลย (0)', text: '0' } },
+              { type: 'action', action: { type: 'message', label: '📉 เล็กน้อย (1)', text: '1' } },
+              { type: 'action', action: { type: 'message', label: '📊 มาก (2)', text: '2' } },
+              { type: 'action', action: { type: 'message', label: '📈 มากที่สุด (3)', text: '3' } }
+            ]
+          }
+        }]
+      });
     }
 
     case 'MENTAL_HEALTH_TEST': {

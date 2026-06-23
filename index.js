@@ -50,16 +50,15 @@ async function handleEvent(event) {
     await supabase.from('user_states').insert({ user_id: userId, state: 'MAIN_MENU', context: {} });
   }
 
-  // 2. [GLOBAL COMMANDS] ระบบคำสั่งลัด
+  // 2. [GLOBAL COMMANDS] ระบบคำสั่งลัดและนำทางเบื้องต้น
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก') {
     await supabase.from('user_states').upsert({ user_id: userId, state: 'MAIN_MENU', context: {} }, { onConflict: 'user_id' });
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [{ type: 'text', text: 'กลับสู่หน้าหลักแล้วครับ เลือกฟีเจอร์ที่ต้องการใช้งานได้เลย' }],
+      messages: [{ type: 'text', text: 'กลับสู่หน้าหลักแล้วครับ\n🤖 กรุณาเลือกฟีเจอร์จากเมนูด้านล่าง หรือพิมพ์คำว่า "สุขภาพจิต" เพื่อเริ่มต้นได้เลยครับ!' }],
     });
   }
 
-  // ดักเช็คปุ่มกดหรือพิมพ์เมนูต่าง ๆ
   if (userMessage === 'สุขภาพจิต' || userMessage === 'เริ่มทำแบบทดสอบสุขภาพจิต') {
     const initialContext = { current_q: 1, scores: {} };
     await supabase.from('user_states').upsert({ user_id: userId, state: 'MENTAL_HEALTH_TEST', context: initialContext }, { onConflict: 'user_id' });
@@ -76,22 +75,39 @@ async function handleEvent(event) {
         messages: [{ type: 'text', text: 'ยินดีต้อนรับครับ! มาร่วมดูแลสุขภาพและจิตใจไปด้วยกันนะ ก่อนอื่นขอข้อมูลเพื่อประมวลผลสุขภาพก่อนครับ\n\nโปรดพิมพ์เพศของคุณ (ชาย หรือ หญิง)' }],
       });
     }
-    // หากมีโปรไฟล์แล้ว แต่แอบข้ามมาพิมพ์เมนูนี้โดยยังไม่ทำแบบทดสอบใหญ่ ให้ดักส่งไปทำแบบทดสอบก่อน
+
+    // หากมีโปรไฟล์แล้ว แต่ยังไม่เคยทำแบบทดสอบใหญ่ บังคับยิงเข้าหน้าทำแบบทดสอบและรวมร่างข้อความทันที
     let { data: checkScore } = await supabase.from('mental_health_scores').select('*').eq('user_id', userId).limit(1);
     if (!checkScore || checkScore.length === 0) {
       const initialContext = { current_q: 1, scores: {} };
       await supabase.from('user_states').upsert({ user_id: userId, state: 'MENTAL_HEALTH_TEST', context: initialContext }, { onConflict: 'user_id' });
+      
+      const firstQuestion = MENTAL_QUESTIONS.find(q => q.id === 1);
+      let lockText = `🔒 คุณยังไม่ได้ทำแบบทดสอบสุขภาพจิตเริ่มต้นประจำตัวเลยครับ ขอความกรุณาทำแบบทดสอบ 55 ข้อนี้ให้เสร็จก่อน เพื่อเปิดใช้งานระบบภารกิจประจำวันนะครับ\n\n` +
+        `🧠 [แบบทดสอบสุขภาพจิต]\n\n${firstQuestion.text}\n\nโปรดเลือกคำตอบที่ตรงกับความรู้สึกของคุณมากที่สุด:`;
+        
       return client.replyMessage({
         replyToken: event.replyToken,
-        messages: [{ type: 'text', text: '🔒 คุณยังไม่ได้ทำแบบทดสอบสุขภาพจิตเริ่มต้นประจำตัวเลยครับ ขอความกรุณาทำแบบทดสอบ 55 ข้อนี้ให้เสร็จก่อน เพื่อเปิดใช้งานระบบภารกิจประจำวันนะครับ เริ่มกันเลย!' }]
-      }).then(() => sendMentalQuestion(event, 1));
+        messages: [{
+          type: 'text',
+          text: lockText,
+          quickReply: {
+            items: [
+              { type: 'action', action: { type: 'message', label: '❌ ไม่เลย (0)', text: '0' } },
+              { type: 'action', action: { type: 'message', label: '📉 เล็กน้อย (1)', text: '1' } },
+              { type: 'action', action: { type: 'message', label: '📊 มาก (2)', text: '2' } },
+              { type: 'action', action: { type: 'message', label: '📈 มากที่สุด (3)', text: '3' } }
+            ]
+          }
+        }]
+      });
     }
-
+    
     await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: {} }, { onConflict: 'user_id' });
     return showDailyDashboard(event, userId, profile);
   }
 
-  // 3. STATE ROUTING (ระบบจัดแจงสถานะคนใช้บอท)
+  // 3. STATE ROUTING (ระบบจัดการสเตตัสกระบวนการ)
   switch (currentState) {
     case 'ASK_GENDER': {
       if (userMessage !== 'ชาย' && userMessage !== 'หญิง') {
@@ -145,17 +161,16 @@ async function handleEvent(event) {
         user_id: userId, gender, age, weight, height, bmi, bmr, tdee, water_goal, step_goal
       }, { onConflict: 'user_id' });
 
-      // 🌟 1. ดึงข้อความคำถามข้อที่ 1 มารอไว้ก่อน
+      // ดึงคำถามสุขภาพจิตข้อ 1 มารอรวมร่าง
       const firstQuestion = MENTAL_QUESTIONS.find(q => q.id === 1);
 
-      // 🌟 2. รวมร่างข้อความ: เอาสรุปสัดส่วนร่างกาย มารวมกับคำถามข้อแรกในกล่องข้อความเดียว
       let combinedText = `📝 บันทึกสัดส่วนร่างกายเรียบร้อยแล้วครับ!\n\n` +
         `📊 สรุปค่าทางกายภาพ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n` +
         `⚠️ เพื่อการดูแลที่สมบูรณ์แบบ ขั้นตอนถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น (55 ข้อ)" เพื่อประเมินความเสี่ยงและออกแบบการดูแลให้ตรงจุดครับ\n` +
         `----------------------------------------\n\n` +
         `🧠 [แบบทดสอบสุขภาพจิต]\n\n${firstQuestion.text}\n\nโปรดเลือกคำตอบที่ตรงกับความรู้สึกของคุณมากที่สุดในช่วง 2 สัปดาห์ที่ผ่านมา:`;
       
-      // 🌟 3. อัปเดตสถานะในเบสไปเป็นโหมดทำข้อสอบล่วงหน้า
+      // อัปเดตสถานะเปลี่ยนโหมดทำแบบทดสอบล่วงหน้า
       const initialMentalContext = { current_q: 1, scores: {} };
       await supabase.from('user_states').upsert({ 
         user_id: userId, 
@@ -163,7 +178,6 @@ async function handleEvent(event) {
         context: initialMentalContext 
       }, { onConflict: 'user_id' });
 
-      // 🌟 4. ส่งข้อความรวมร่างที่มีปุ่ม Quick Reply ยิงออกไปพร้อมกันแบบเดี่ยว ๆ ชัวร์ 100%
       return client.replyMessage({ 
         replyToken: event.replyToken, 
         messages: [{
@@ -196,50 +210,71 @@ async function handleEvent(event) {
         await supabase.from('user_states').update({ context: currentContext }).eq('user_id', userId);
         return sendMentalQuestion(event, nextQ);
       } else {
-        // คำนวณคะแนนรวมเมื่อทำครบ
+        // ถ้ารันครบทุกข้อแล้ว -> ทำการคำนวณและดึงแดชบอร์ดมารวมร่างทันที
         let totalScore = 0;
         for (const qId in currentContext.scores) {
           totalScore += currentContext.scores[qId];
         }
 
-        // แปลผลลัพธ์แยกกลุ่มความเสี่ยงพร้อมวิธีแก้ปัญหา (Logic แตกแขนงตามที่คุณออกแบบ)
         let resultText = "";
         let adviceText = "";
-        let isAtRisk = false;
 
-        // ตัวอย่างเกณฑ์คะแนน (ปรับแต่งตัวเลขตามสเกล 55 ข้อจริงในอนาคตได้ครับ)
-        if (totalScore <= 5) { // ในระบบจำลอง 5 ข้อ ถ้าคะแนนน้อยคือเครียดสะสม
-          isAtRisk = true;
+        if (totalScore <= 5) { 
           resultText = "🚨 ตรวจพบภาวะมีความเสี่ยงด้านสุขภาพจิต";
-          adviceText = "💡 [คำแนะนำวิธีแก้ไขสำหรับคุณ]:\nช่วงนี้คุณอาจจะเจอเรื่องเหนื่อยใจหรือเครียดสะสม แนะนำให้ลองหยุดพักจากเรื่องเครียด ๆ สัก 10 นาที ฟังเพลงที่ชอบ หรือหาน้ำเย็น ๆ ดื่มนะครับ และหากรู้สึกไม่ไหว สามารถใช้ฟีเจอร์พิมพ์คุยระบายกับบอทได้เสมอนะ!";
+          adviceText = "💡 [คำแนะนำวิธีแก้ไขสำหรับคุณ]:\nช่วงนี้คุณอาจจะเจอเรื่องเหนื่อยใจหรือเครียดสะสม แนะนำให้ลองหยุดพักผ่อน ฟังเพลงที่ชอบ หรือหาน้ำเย็น ๆ ดื่มนะ หากรู้สึกไม่ไหว สามารถใช้ฟีเจอร์พิมพ์คุยระบายกับบอทได้เสมอนะครับ";
         } else {
           resultText = "🟢 สภาพจิตใจปกติ ดีเยี่ยม";
           adviceText = "💡 [คำแนะนำสำหรับคุณ]:\nยอดเยี่ยมมากครับ! คุณมีเกราะป้องกันจิตใจที่ดีมาก รักษาสุขภาพใจที่สดใสแบบนี้ต่อไปเรื่อย ๆ นะครับ";
         }
 
-        // บันทึกลงฐานข้อมูลผลคะแนน
+        // บันทึกลงฐานข้อมูลผลคะแนนสุขภาพจิต
         await supabase.from('mental_health_scores').insert({
           user_id: userId, total_score: totalScore, result_text: resultText
         });
 
-        // หลังจากประเมินเสร็จ ปลดล็อกให้ไปบันทึกภารกิจสุขภาพประจำวันต่อได้
+        // สลับสเตตัสใน Supabase ไปเป็นหน้าหลักแดชบอร์ด
         await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: {} }, { onConflict: 'user_id' });
         let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
-        // ส่งรายงานผลลัพธ์แบบละเอียดให้ผู้ใช้
+        // ไปดึงข้อมูลประวัติภารกิจของวันนี้มาแสดงผล
+        const todayStr = new Date().toISOString().split('T')[0];
+        let { data: progress } = await supabase.from('daily_progress').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
+        if (!progress) {
+          const { data: newProg } = await supabase.from('daily_progress').insert({ user_id: userId, log_date: todayStr }).select().single();
+          progress = newProg;
+        }
+
+        const waterPercent = Math.min((progress.water_intake / profile.water_goal) * 100, 100);
+        const stepPercent = Math.min((progress.steps_count / profile.step_goal) * 100, 100);
+        const stretchPercent = Math.min((progress.stretch_count / 3) * 100, 100);
+        const totalSuccess = Math.round((waterPercent + stepPercent + stretchPercent) / 3);
+
+        // มหารวมร่างเนื้อหาผลลัพธ์ + สรุปปลดล็อกฟีเจอร์ + แดชบอร์ดจริง
+        let finishCombinedText = `🎉 ทำแบบทดสอบสุขภาพจิตเสร็จสิ้นแล้ว!\n\n📊 คะแนนรวมของคุณ: ${totalScore} คะแนน\n🔍 ผลประเมิน: ${resultText}\n\n${adviceText}\n` +
+          `----------------------------------------\n` +
+          `🏁 ระบบได้ปลดล็อกฟีเจอร์เรียบร้อยแล้ว! นี่คือแดชบอร์ดภารกิจประจำวันของคุณ มาร่วมทำภารกิจกันเถอะครับ 👇\n\n` +
+          `🏃‍♂️ [แดชบอร์ดภารกิจประจำวัน]\n` +
+          `🔥 ความสำเร็จรวม: ${totalSuccess}%\n\n` +
+          `💧 1. การดื่มน้ำ: ${progress.water_intake} / ${profile.water_goal} ml\n` +
+          `👟 2. การเดินนับก้าว: ${progress.steps_count} / ${profile.step_goal} ก้าว\n` +
+          `🧘‍♂️ 3. ยืดเส้นยืดสาย: ${progress.stretch_count} / 3 ครั้ง\n\n` +
+          `👉 กดปุ่มด่วนด้านล่างเพื่อบันทึกภารกิจแรกของคุณได้เลยครับ!`;
+
         return client.replyMessage({
           replyToken: event.replyToken,
-          messages: [
-            {
-              type: 'text',
-              text: `🎉 ทำแบบทดสอบสุขภาพจิตเสร็จสิ้นแล้ว!\n\n📊 คะแนนรวมของคุณ: ${totalScore} คะแนน\n🔍 ผลประเมิน: ${resultText}\n\n${adviceText}`
-            },
-            {
-              type: 'text',
-              text: `🏁 ระบบได้ปลดล็อกฟีเจอร์ทั้งหมดเรียบร้อยแล้ว! นี่คือแดชบอร์ดภารกิจประจำวันของคุณ มาร่วมทำภารกิจกันเถอะครับ 👇`
+          messages: [{
+            type: 'text',
+            text: finishCombinedText,
+            quickReply: {
+              items: [
+                { type: 'action', action: { type: 'message', label: '💧 ดื่มน้ำ 300ml', text: 'ดื่มน้ำ 300ml' } },
+                { type: 'action', action: { type: 'message', label: '🧘‍♂️ ยืดเส้นแล้ว', text: 'ยืดเส้นแล้ว' } },
+                { type: 'action', action: { type: 'message', label: '👟 เดิน +1,000 ก้าว', text: 'เดิน 1000' } },
+                { type: 'action', action: { type: 'message', label: '🏠 เมนูหลัก', text: 'กลับหน้าหลัก' } }
+              ]
             }
-          ]
-        }).then(() => showDailyDashboard(event, userId, profile));
+          }]
+        });
       }
     }
 
@@ -268,6 +303,14 @@ async function handleEvent(event) {
       let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
       return showDailyDashboard(event, userId, profile);
     }
+  }
+
+  // Fallback กรณีเปิดหน้าหลักแล้วพิมพ์อย่างอื่นที่ระบบไม่รู้จัก
+  if (currentState === 'MAIN_MENU') {
+    return client.replyMessage({
+      replyToken: event.replyToken,
+      messages: [{ type: 'text', text: '🤖 กรุณาเลือกฟีเจอร์ที่ต้องการใช้งานจากเมนูด้านล่าง หรือพิมพ์คำว่า "สุขภาพจิต" เพื่อทำแบบทดสอบเริ่มต้นได้เลยครับ!' }]
+    });
   }
 }
 

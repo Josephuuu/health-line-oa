@@ -210,7 +210,7 @@ async function handleEvent(event) {
         await supabase.from('user_states').update({ context: currentContext }).eq('user_id', userId);
         return sendMentalQuestion(event, nextQ);
       } else {
-        // ถ้ารันครบทุกข้อแล้ว -> ทำการคำนวณและดึงแดชบอร์ดมารวมร่างทันที
+        // ถ้ารันครบทุกข้อแล้ว -> คำนวณผลคะแนนสุขภาพจิต
         let totalScore = 0;
         for (const qId in currentContext.scores) {
           totalScore += currentContext.scores[qId];
@@ -227,37 +227,45 @@ async function handleEvent(event) {
           adviceText = "💡 [คำแนะนำสำหรับคุณ]:\nยอดเยี่ยมมากครับ! คุณมีเกราะป้องกันจิตใจที่ดีมาก รักษาสุขภาพใจที่สดใสแบบนี้ต่อไปเรื่อย ๆ นะครับ";
         }
 
-        // บันทึกลงฐานข้อมูลผลคะแนนสุขภาพจิต
+        // 1. บันทึกลงฐานข้อมูลผลคะแนนสุขภาพจิต
         await supabase.from('mental_health_scores').insert({
           user_id: userId, total_score: totalScore, result_text: resultText
         });
 
-        // สลับสเตตัสใน Supabase ไปเป็นหน้าหลักแดชบอร์ด
+        // 2. สลับสเตตัสใน Supabase ไปเป็นหน้าหลักแดชบอร์ด
         await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION', context: {} }, { onConflict: 'user_id' });
+        
+        // 3. ดึงหรือสร้างข้อมูล Progress ของวันนี้ ป้องกัน Logic บั๊กค้าง
         let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
-
-        // ไปดึงข้อมูลประวัติภารกิจของวันนี้มาแสดงผล
         const todayStr = new Date().toISOString().split('T')[0];
         let { data: progress } = await supabase.from('daily_progress').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
+        
         if (!progress) {
           const { data: newProg } = await supabase.from('daily_progress').insert({ user_id: userId, log_date: todayStr }).select().single();
           progress = newProg;
         }
 
-        const waterPercent = Math.min((progress.water_intake / profile.water_goal) * 100, 100);
-        const stepPercent = Math.min((progress.steps_count / profile.step_goal) * 100, 100);
-        const stretchPercent = Math.min((progress.stretch_count / 3) * 100, 100);
+        // ป้องกัน Error หากโปรไฟล์ดึงไม่ขึ้น หรือความคืบหน้าไม่มีข้อมูลให้ใช้ Default ป้องกัน Bot Crash
+        const water_goal = profile ? profile.water_goal : 2000;
+        const step_goal = profile ? profile.step_goal : 10000;
+        const currentWater = progress ? progress.water_intake : 0;
+        const currentSteps = progress ? progress.steps_count : 0;
+        const currentStretch = progress ? progress.stretch_count : 0;
+
+        const waterPercent = Math.min((currentWater / water_goal) * 100, 100);
+        const stepPercent = Math.min((currentSteps / step_goal) * 100, 100);
+        const stretchPercent = Math.min((currentStretch / 3) * 100, 100);
         const totalSuccess = Math.round((waterPercent + stepPercent + stretchPercent) / 3);
 
-        // มหารวมร่างเนื้อหาผลลัพธ์ + สรุปปลดล็อกฟีเจอร์ + แดชบอร์ดจริง
+        // มหารวมร่างเนื้อหาผลลัพธ์ + สรุปปลดล็อกฟีเจอร์ + แดชบอร์ดจริง ส่งกลับหา User
         let finishCombinedText = `🎉 ทำแบบทดสอบสุขภาพจิตเสร็จสิ้นแล้ว!\n\n📊 คะแนนรวมของคุณ: ${totalScore} คะแนน\n🔍 ผลประเมิน: ${resultText}\n\n${adviceText}\n` +
           `----------------------------------------\n` +
           `🏁 ระบบได้ปลดล็อกฟีเจอร์เรียบร้อยแล้ว! นี่คือแดชบอร์ดภารกิจประจำวันของคุณ มาร่วมทำภารกิจกันเถอะครับ 👇\n\n` +
           `🏃‍♂️ [แดชบอร์ดภารกิจประจำวัน]\n` +
           `🔥 ความสำเร็จรวม: ${totalSuccess}%\n\n` +
-          `💧 1. การดื่มน้ำ: ${progress.water_intake} / ${profile.water_goal} ml\n` +
-          `👟 2. การเดินนับก้าว: ${progress.steps_count} / ${profile.step_goal} ก้าว\n` +
-          `🧘‍♂️ 3. ยืดเส้นยืดสาย: ${progress.stretch_count} / 3 ครั้ง\n\n` +
+          `💧 1. การดื่มน้ำ: ${currentWater} / ${water_goal} ml\n` +
+          `👟 2. การเดินนับก้าว: ${currentSteps} / ${step_goal} ก้าว\n` +
+          `🧘‍♂️ 3. ยืดเส้นยืดสาย: ${currentStretch} / 3 ครั้ง\n\n` +
           `👉 กดปุ่มด่วนด้านล่างเพื่อบันทึกภารกิจแรกของคุณได้เลยครับ!`;
 
         return client.replyMessage({
@@ -336,12 +344,24 @@ function sendMentalQuestion(event, qId) {
 async function showDailyDashboard(event, userId, profile) {
   const todayStr = new Date().toISOString().split('T')[0];
   let { data: progress } = await supabase.from('daily_progress').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
-  const waterPercent = Math.min((progress.water_intake / profile.water_goal) * 100, 100);
-  const stepPercent = Math.min((progress.steps_count / profile.step_goal) * 100, 100);
-  const stretchPercent = Math.min((progress.stretch_count / 3) * 100, 100);
+  
+  if (!progress) {
+    const { data: newProg } = await supabase.from('daily_progress').insert({ user_id: userId, log_date: todayStr }).select().single();
+    progress = newProg;
+  }
+
+  const water_goal = profile ? profile.water_goal : 2000;
+  const step_goal = profile ? profile.step_goal : 10000;
+  const currentWater = progress ? progress.water_intake : 0;
+  const currentSteps = progress ? progress.steps_count : 0;
+  const currentStretch = progress ? progress.stretch_count : 0;
+
+  const waterPercent = Math.min((currentWater / water_goal) * 100, 100);
+  const stepPercent = Math.min((currentSteps / step_goal) * 100, 100);
+  const stretchPercent = Math.min((currentStretch / 3) * 100, 100);
   const totalSuccess = Math.round((waterPercent + stepPercent + stretchPercent) / 3);
 
-  const dashboardText = `🏃‍♂️ [แดชบอร์ดภารกิจประจำวัน]\n🔥 ความสำเร็จรวม: ${totalSuccess}%\n\n💧 1. การดื่มน้ำ:\n   - ทำได้: ${progress.water_intake} / ${profile.water_goal} ml\n\n👟 2. การเดินนับก้าว:\n   - ทำได้: ${progress.steps_count} / ${profile.step_goal} ก้าว\n\n🧘‍♂️ 3. ยืดเส้นยืดสาย:\n   - ทำได้: ${progress.stretch_count} / 3 ครั้ง`;
+  const dashboardText = `🏃‍♂️ [แดชบอร์ดภารกิจประจำวัน]\n🔥 ความสำเร็จรวม: ${totalSuccess}%\n\n💧 1. การดื่มน้ำ:\n   - ทำได้: ${currentWater} / ${water_goal} ml\n\n👟 2. การเดินนับก้าว:\n   - ทำได้: ${currentSteps} / ${step_goal} ก้าว\n\n🧘‍♂️ 3. ยืดเส้นยืดสาย:\n   - ทำได้: ${currentStretch} / 3 ครั้ง`;
 
   return client.replyMessage({
     replyToken: event.replyToken,

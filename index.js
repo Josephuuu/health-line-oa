@@ -59,15 +59,19 @@ async function handleEvent(event) {
     });
   }
 
-  const menuList = data.map(item =>
+  const limited = data.slice(0, 5);
+
+  const menuList = limited.map(item =>
     `🍽 ${item.name} (${item.shop})\n` +
     `🔥 ${item.calories} kcal\n` +
     `💪 Protein: ${item.protein}g | Fat: ${item.fat}g | Carb: ${item.carbohydrate}g`
   ).join('\n\n');
 
+  const suffix = data.length > 5 ? `\n\n...และอีก ${data.length - 5} เมนู พิมพ์ชื่อให้เฉพาะเจาะจงกว่านี้ได้ครับ` : '';
+
   return client.replyMessage({
     replyToken: event.replyToken,
-    messages: [{ type: 'text', text: menuList }],
+    messages: [{ type: 'text', text: menuList + suffix }],
   });
 }
 

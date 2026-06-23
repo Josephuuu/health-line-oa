@@ -297,12 +297,59 @@ async function showDailyDashboard(event, userId, profile) {
     `   - ทำได้: ${progress.steps_count} / ${profile.step_goal} ก้าว\n\n` +
     `🧘‍♂️ 3. ยืดเส้นยืดสาย:\n` +
     `   - ทำได้: ${progress.stretch_count} / 3 ครั้ง\n\n` +
-    `💡 วิธีอัปเดตภารกิจแบบด่วน:\n` +
-    `• พิมพ์ "ดื่มน้ำ 300ml" เมื่อดื่มน้ำ\n` +
-    `• พิมพ์ "ยืดเส้นแล้ว" เมื่อยืดเหยียดเสร็จ\n` +
-    `• พิมพ์ "เดิน 1000" (ตามด้วยจำนวนก้าว)`;
+    `👉 กดปุ่มด่วนด้านล่างเพื่อบันทึกภารกิจได้เลยครับ!`;
 
-  return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: dashboardText }] });
+  return client.replyMessage({
+    replyToken: event.replyToken,
+    messages: [{
+      type: 'text',
+      text: dashboardText,
+      quickReply: {
+        items: [
+          {
+            type: 'action',
+            action: {
+              type: 'message',
+              label: '💧 ดื่มน้ำ 300ml',
+              text: 'ดื่มน้ำ 300ml'
+            }
+          },
+          {
+            type: 'action',
+            action: {
+              type: 'message',
+              label: '🧘‍♂️ ยืดเส้นแล้ว',
+              text: 'ยืดเส้นแล้ว'
+            }
+          },
+          {
+            type: 'action',
+            action: {
+              type: 'message',
+              label: '👟 เดิน +1,000 ก้าว',
+              text: 'เดิน 1000'
+            }
+          },
+          {
+            type: 'action',
+            action: {
+              type: 'message',
+              label: '👟 เดิน +3,000 ก้าว',
+              text: 'เดิน 3000'
+            }
+          },
+          {
+            type: 'action',
+            action: {
+              type: 'message',
+              label: '🏠 เมนูหลัก',
+              text: 'กลับหน้าหลัก'
+            }
+          }
+        ]
+      }
+    }]
+  });
 }
 
 app.listen(process.env.PORT || 3000, () => {

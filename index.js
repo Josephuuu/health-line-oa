@@ -140,19 +140,30 @@ async function handleEvent(event) {
       const water_goal = Math.round(weight * 33);
       let step_goal = (bmi < 18.5) ? 8000 : (bmi < 23) ? 10000 : (bmi < 25) ? 11000 : 7000;
 
-      // บันทึกข้อมูลสุขภาพลงทะเบียนลง Profiles
+      // บันทึกข้อมูลสุขภาพลง Profiles
       await supabase.from('user_profiles').upsert({
         user_id: userId, gender, age, weight, height, bmi, bmr, tdee, water_goal, step_goal
       }, { onConflict: 'user_id' });
 
-      let introText = `📝 บันทึกสัดส่วนร่างกายเรียบร้อยแล้วครับ!\n\n📊 สรุปค่าทางกายภาพ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n⚠️ เพื่อการดูแลที่สมบูรณ์แบบ ขั้นตอนถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น (55 ข้อ)" เพื่อประเมินความเสี่ยงและออกแบบการดูแลให้ตรงจุดครับ`;
+      let introText = `📝 บันทึกสัดส่วนร่างกายเรียบร้อยแล้วครับ!\n\n📊 สรุปค่าทางกายภาพ:\n• BMI: ${bmi}\n• BMR: ${bmr} kcal/วัน\n• เป้าหมายดื่มน้ำ: ${water_goal} ml/วัน\n\n⚠️ เพื่อการดูแลที่สมบูรณ์แบบ ขั้นตอนถัดไประบบจะพาคุณเข้าสู่ "แบบทดสอบสุขภาพจิตเริ่มต้น (55 ข้อ)" เพื่อประเมินความเสี่ยงก่อนเปิดระบบบันทึกภารกิจครับ เริ่มกันเลย!`;
       
-      await client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: introText }] });
+      // 🌟 [จุดแก้ไขหลัก]: เตรียมล้างไพ่เซ็ต Context สำหรับทำข้อสอบ 55 ข้อให้คลีน 100%
+      const initialMentalContext = { current_q: 1, scores: {} };
       
-      // บังคับเปลี่ยน State วิ่งไปทำแบบทดสอบสุขภาพจิตทันที!!
-      const initialContext = { current_q: 1, scores: {} };
-      await supabase.from('user_states').upsert({ user_id: userId, state: 'MENTAL_HEALTH_TEST', context: initialContext }, { onConflict: 'user_id' });
-      return sendMentalQuestion(event, 1);
+      // อัปเดตสถานะในเบสไปเป็นโหมดทำข้อสอบล่วงหน้าทันทีก่อนส่งข้อความตอบกลับ LINE
+      await supabase.from('user_states').upsert({ 
+        user_id: userId, 
+        state: 'MENTAL_HEALTH_TEST', 
+        context: initialMentalContext 
+      }, { onConflict: 'user_id' });
+
+      // ส่งข้อความแจ้งสรุปสัดส่วนร่างกาย พร้อมตามด้วยส่งข้อคำถามข้อที่ 1 ทันทีแบบมีปุ่ม
+      return client.replyMessage({ 
+        replyToken: event.replyToken, 
+        messages: [
+          { type: 'text', text: introText }
+        ]
+      }).then(() => sendMentalQuestion(event, 1)); // สั่งฟังก์ชันส่งปุ่มทำงานต่อท้ายทันที
     }
 
     case 'MENTAL_HEALTH_TEST': {

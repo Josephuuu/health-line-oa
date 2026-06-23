@@ -53,7 +53,7 @@ async function handleEvent(event) {
   }
 
   // 2. [GLOBAL COMMANDS] ถ้าพิมพ์คำเหล่านี้ หรือกดจาก Rich Menu จะเปลี่ยนฟีเจอร์ทันที
-  if (userMessage === '🧠 สุขภาพจิต') {
+  if (userMessage === 'สุขภาพจิต') {
     await supabase.from('user_states').upsert({ user_id: userId, state: 'MENTAL_HEALTH_TEST' });
     return client.replyMessage({
       replyToken: event.replyToken,
@@ -61,7 +61,7 @@ async function handleEvent(event) {
     });
   }
 
-  if (userMessage === '🍽 อาหารโรงอาหาร') {
+  if (userMessage === 'อาหารโรงอาหาร') {
     await supabase.from('user_states').upsert({ user_id: userId, state: 'AWAITING_FOOD_NAME' });
     return client.replyMessage({
       replyToken: event.replyToken,
@@ -69,7 +69,7 @@ async function handleEvent(event) {
     });
   }
 
-  if (userMessage === '🥗 แนะนำอาหารลดน้ำหนัก') {
+  if (userMessage === 'แนะนำอาหารลดน้ำหนัก') {
     await supabase.from('user_states').upsert({ user_id: userId, state: 'WEIGHT_LOSS_CONSULT' });
     return client.replyMessage({
       replyToken: event.replyToken,
@@ -77,7 +77,7 @@ async function handleEvent(event) {
     });
   }
 
-  if (userMessage === '🏃‍♂️ ภารกิจสุขภาพประจำวัน') {
+  if (userMessage === 'ภารกิจสุขภาพประจำวัน') {
     await supabase.from('user_states').upsert({ user_id: userId, state: 'DAILY_MISSION' });
     return client.replyMessage({
       replyToken: event.replyToken,

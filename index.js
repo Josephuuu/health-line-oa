@@ -17,9 +17,9 @@ const app = express();
 
 // 🎨 Theme Colors (Clean Health Theme)
 const COLORS = {
-  PRIMARY: "#0D9488",    // Teal เข้ม สบายตา สำหรับ Header หลัก
-  SECONDARY: "#10B981",  // Emerald Green สำหรับปุ่มแอ็กชันหลัก
-  ACCENT: "#0284C7",     // Soft Blue สำหรับข้อมูลสถิติ
+  PRIMARY: "#0D9488",    // Teal เข้ม
+  SECONDARY: "#10B981",  // Emerald Green
+  ACCENT: "#0284C7",     
   NEUTRAL_DARK: "#1F2937",
   NEUTRAL_LIGHT: "#F3F4F6",
   SUCCESS: "#059669",
@@ -36,7 +36,7 @@ const MENTAL_QUESTIONS = [
   { id: 5, text: "5. ท่านรู้สึกเบื่อหน่ายท้อแท้กับการดำเนินชีวิตประจำวัน" }
 ];
 
-app.get('/', (req, res) => res.send('Health Bot v4 with Beautiful UI is running!'));
+app.get('/', (req, res) => res.send('Health Bot v5 with Global Interceptor is running!'));
 
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
@@ -82,13 +82,32 @@ async function handleEvent(event) {
                        `6️⃣ [แบบทดสอบสุขภาพจิตรายเดือน] (ทำประเมินสุขภาพจิตและสภาวะอารมณ์)\n\n` +
                        `👉 พิมพ์หมายเลขเมนู เลือกปุ่มริชเมนู หรือพิมพ์ "เมนูหลัก" ได้ตลอดเวลาครับ`;
 
+  // 🏠 ปุ่มลัดกลับเมนูหลัก
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก' || userMessage === 'เมนู') {
     await updateState(userId, 'MAIN_MENU', {});
     return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: mainMenuText }] });
   }
 
+  // =========================================================================
+  // 🎯 GLOBAL INTERCEPTOR: ตัวดักจับคำสั่งกดเปลี่ยนฟีเจอร์ข้ามโหมด (1-6)
+  // =========================================================================
+  const isMenuTrigger = ['1', '2', '3', '4', '5', '6'].includes(userMessage) ||
+                        userMessage.includes('ลงทะเบียน') ||
+                        userMessage.includes('อัปเดตน้ำหนัก') ||
+                        userMessage.includes('บันทึกประจำวัน') ||
+                        userMessage.includes('แนะนำอาหาร') ||
+                        userMessage.includes('ค้นหา') ||
+                        userMessage.includes('สุขภาพจิต');
+
+  // ถ้าพิมพ์ตัวเลขเมนูเข้ามา หรือคลิกปุ่มริชเมนู ไม่ว่าจะติดอยู่ใน State ไหน ให้หลุดออกมาทำงานตรงนี้ทันที!
+  if (isMenuTrigger && currentState !== 'MAIN_MENU') {
+    // ปรับ State กลับเป็น MAIN_MENU ก่อนแล้วปล่อยให้โค้ดรันเข้าเงื่อนไขเมนูด้านล่าง
+    currentState = 'MAIN_MENU';
+    currentContext = {};
+  }
+
   // ==========================================
-  // 📥 MAIN MENU
+  // 📥 MAIN MENU & FEATURE ROUTING
   // ==========================================
   if (currentState === 'MAIN_MENU') {
     
@@ -104,7 +123,7 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔄 อัปเดตสัดส่วนร่างกายปัจจุบัน\n\nโปรดพิมพ์ น้ำหนัก ของคุณเป็นตัวเลข (กก.) เช่น 65' }] });
     }
 
-    // เมนู 3: บันทึกประจำวัน (Soft Pastel Palette)
+    // เมนู 3: บันทึกประจำวัน
     if (userMessage === '3' || userMessage.includes('บันทึกประจำวัน')) {
       await updateState(userId, 'DAILY_MOOD', {});
       const moodCard = {
@@ -133,8 +152,9 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [moodCard] });
     }
 
-    // เมนู 4: แนะนำอาหาร (Theme เขียว Teal สวยงาม)
+    // เมนู 4: แนะนำอาหาร
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
+      await updateState(userId, 'MAIN_MENU', {}); // Reset เสมอ
       const tdee = profile?.tdee || 2000;
       const targetCal = Math.round((tdee - 500) / 3);
       const chronicDisease = profile?.chronic_disease || 'ไม่มี';
@@ -195,21 +215,20 @@ async function handleEvent(event) {
       await updateState(userId, 'SEARCH_NUTRIENT', {});
       let searchIntro = `🔍 [โหมดค้นหาคุณค่าทางโภชนาการเมนูโรงอาหาร]\n\n`;
       searchIntro += `โปรดพิมพ์ชื่อเมนูหรือคำสำคัญที่ต้องการค้นหามาได้เลยครับ (ระบบจะค้นจากคลัง 158+ เมนู)\n\n`;
-      searchIntro += `*(ตัวอย่าง: พิมพ์คำว่า "กะเพรา", "แกง", "ไก่", "หมู" หรือชื่อเมนูเต็มได้เลยครับ)*`;
+      searchIntro += `*(ตัวอย่าง: พิมพ์คำว่า "กะเพรา", "แกง", "ไก่", "หมู" หรือพิมพ์เลขเมนูอื่น 1-6 เพื่อเปลี่ยนโหมดได้ทันทีครับ)*`;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: searchIntro }] });
     }
 
     // เมนู 6: ประเมินสุขภาพจิต
     if (userMessage === '6' || userMessage.includes('สุขภาพจิต')) {
-      currentContext.current_q = 1;
-      currentContext.scores = {};
+      currentContext = { current_q: 1, scores: {} };
       await updateState(userId, 'MONTHLY_MENTAL', currentContext);
       return sendMentalQuestion(event, 1, '🧠 [แบบทดสอบสุขภาพจิตประจำเดือน]\nเพื่อประเมินระดับสภาวะอารมณ์และจิตใจของคุณในรอบเดือนนี้ มาเริ่มกันเลยครับ!\n\n');
     }
   }
 
   // ==========================================
-  // ⚡ CONTROL STATES MACHINE
+  // ⚡ CONTROL STATES MACHINE (ขั้นตอนย่อย)
   // ==========================================
   switch (currentState) {
     
@@ -225,7 +244,6 @@ async function handleEvent(event) {
       currentContext.age = age;
       await updateState(userId, 'REG_DISEASE', currentContext);
       
-      // Flex Card เลือกโรคประจำตัว (คุมโทน Teal + ตัวอักษรสีขาว อ่านง่าย 100%)
       const diseaseCard = {
         type: "flex",
         altText: "โปรดเลือกโรคประจำตัวของคุณ",
@@ -255,7 +273,6 @@ async function handleEvent(event) {
       currentContext.chronic_disease = userMessage;
       await updateState(userId, 'REG_LIFESTYLE', currentContext);
 
-      // Flex Card เลือกพฤติกรรม (คุมโทน Teal + ปุ่มสีกลางละมุนตา)
       const lifestyleCard = {
         type: "flex",
         altText: "โปรดเลือกพฤติกรรมการใช้ชีวิต",
@@ -337,7 +354,6 @@ async function handleEvent(event) {
 
       await updateState(userId, 'MAIN_MENU', {});
 
-      // Flex Card สรุปรายวัน โทน Teal สะอาดตา
       const dailySummaryCard = {
         type: "flex",
         altText: "📝 สรุปบันทึกสุขภาพรายวัน",
@@ -404,7 +420,7 @@ async function handleEvent(event) {
       } else {
         return client.replyMessage({ 
           replyToken: event.replyToken, 
-          messages: [{ type: 'text', text: `❌ ไม่พบเมนู "${userMessage}" ในฐานข้อมูล 158 รายการ\n\nลองพิมพ์คำสั้นๆ เช่น "ไก่", "หมู", "แกง" หรือพิมพ์ "เมนูหลัก" เพื่อออกจากการค้นหาครับ` }] 
+          messages: [{ type: 'text', text: `❌ ไม่พบเมนู "${userMessage}" ในฐานข้อมูล 158 รายการ\n\nลองพิมพ์คำสั้นๆ เช่น "ไก่", "หมู", "แกง" หรือพิมพ์เลข 1-6 เพื่อเปลี่ยนโหมดได้เลยครับ` }] 
         });
       }
 
@@ -465,7 +481,6 @@ async function handleEvent(event) {
   }
 }
 
-// การ์ดเลือกเพศ โทน Teal คลีนๆ
 function getGenderFlexCard(title) {
   return {
     type: "flex",
@@ -530,5 +545,5 @@ async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server runs with Minimal & Clean UI!');
+  console.log('Server runs with Global Interceptor!');
 });

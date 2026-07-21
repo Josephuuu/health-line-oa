@@ -29,7 +29,7 @@ app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
     .then(() => res.json({ status: 'ok' }))
     .catch((err) => {
-      console.error(err);
+      console.error('Webhook Error:', err);
       res.status(500).end();
     });
 });
@@ -53,9 +53,7 @@ async function handleEvent(event) {
   // ดึงโปรไฟล์เพื่อเช็กว่าเคยลงทะเบียนหรือยัง
   let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
-  // -----------------------------------------------------------------
-  // 🚨 [RULE] บังคับลงทะเบียนครั้งแรกก่อนใช้ฟีเจอร์อื่น!
-  // -----------------------------------------------------------------
+  // 🚨 บังคับลงทะเบียนครั้งแรกก่อนใช้ฟีเจอร์อื่น
   if (!profile && currentState === 'MAIN_MENU' && userMessage !== '1' && !userMessage.includes('ลงทะเบียน')) {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
@@ -127,30 +125,29 @@ async function handleEvent(event) {
       });
     }
 
-    // เมนู 4: แนะนำอาหารลดน้ำหนัก (ดึงตรงจาก Supabase คลัง 158+ เมนู)
+    // เมนู 4: แนะนำอาหารลดน้ำหนัก
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
-      const tdee = profile.tdee || 2000;
-      const targetCal = Math.round((tdee - 500) / 3); // โควตาลดน้ำหนักต่อมื้อ
+      const tdee = profile?.tdee || 2000;
+      const targetCal = Math.round((tdee - 500) / 3);
+      const chronicDisease = profile?.chronic_disease || 'ไม่มี';
+      const lifestyle = profile?.lifestyle || 'ทั่วไป';
 
-      // ดึงเมนูในคลัง Supabase ที่มีแคลอรีไม่เกิน targetCal
       let { data: fitMenus } = await supabase
         .from('canteen_menus')
         .select('*')
         .lte('calories', targetCal)
         .limit(30);
 
-      // ถ้าค้นหาแล้วไม่เจอ ให้ดึงเมนูทั่วไปสุ่มมา
       if (!fitMenus || fitMenus.length === 0) {
         let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(10);
         fitMenus = fallback || [];
       }
 
-      // สุ่มคัดมา 3 เมนูเพื่อความหลากหลาย
       const randomSelected = fitMenus.sort(() => 0.5 - Math.random()).slice(0, 3);
 
       let foodResponse = `🏪 [เมนูแนะนำเพื่อลดน้ำหนักในโรงอาหารของคุณ]\n`;
       foodResponse += `📊 เป้าหมายพลังงานมื้อนี้: ไม่ควรเกิน **${targetCal} kcal**\n`;
-      foodResponse += `🩺 โรคประจำตัว: ${profile.chronic_disease} | พฤติกรรม: ${profile.lifestyle}\n`;
+      foodResponse += `🩺 โรคประจำตัว: ${chronicDisease} | พฤติกรรม: ${lifestyle}\n`;
       foodResponse += `-------------------------------------\n\n`;
       foodResponse += `💡 เมนูคัดสรรแนะนำประจำมื้อนี้:\n`;
 
@@ -163,14 +160,14 @@ async function handleEvent(event) {
       }
 
       foodResponse += `\n`;
-      if (profile.chronic_disease && profile.chronic_disease.includes('ความดัน')) {
+      if (chronicDisease.includes('ความดัน')) {
         foodResponse += `⚠️ *คำแนะนำพิเศษ*: หลีกเลี่ยงการซดน้ำซุปหรือเมนูรสจัด เพื่อควบคุมปริมาณโซเดียมนะครับ\n\n`;
       }
       foodResponse += `🏠 พิมพ์ "เมนูหลัก" เพื่อกลับไปหน้ารวมฟีเจอร์`;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: foodResponse }] });
     }
 
-    // เมนู 5: ค้นหาคุณค่าทางโภชนาการ (ดึงจาก Supabase สดๆ)
+    // เมนู 5: ค้นหาคุณค่าทางโภชนาการ
     if (userMessage === '5' || userMessage.includes('ค้นหา')) {
       await updateState(userId, 'SEARCH_NUTRIENT', {});
       let searchIntro = `🔍 [โหมดค้นหาคุณค่าทางโภชนาการเมนูโรงอาหาร]\n\n`;
@@ -189,11 +186,10 @@ async function handleEvent(event) {
   }
 
   // ==========================================
-  // ⚡ CONTROL STATES MACHINE (พาร์ททำงานเชิงลึกตามโหมด)
+  // ⚡ CONTROL STATES MACHINE
   // ==========================================
   switch (currentState) {
     
-    // --- โหมดลงทะเบียนประวัติสุขภาพ ---
     case 'REG_GENDER':
       if (userMessage !== 'ชาย' && userMessage !== 'หญิง') return replyErr(event, 'โปรดเลือก "ชาย" หรือ "หญิง" จากปุ่มด้านล่างครับ');
       currentContext.gender = userMessage;
@@ -259,8 +255,6 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🎉 ลงทะเบียนประวัติสุขภาพเสร็จสมบูรณ์เรียบร้อยครับ!\n\n' + mainMenuText }] });
 
-
-    // --- โหมดอัปเดตสัดส่วนสรีระ ---
     case 'UPDATE_WEIGHT':
       const uw = parseFloat(userMessage);
       if (isNaN(uw) || uw <= 0) return replyErr(event, 'โปรดระบุน้ำหนักเป็นตัวเลขครับ');
@@ -280,8 +274,6 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💪 อัปเดตสัดส่วนสรีระร่างกายและดัชนีพลังงานใหม่เรียบร้อยครับ!\n\n' + mainMenuText }] });
 
-
-    // --- โหมดบันทึกรายวัน ---
     case 'DAILY_MOOD':
       currentContext.mood = userMessage;
       await updateState(userId, 'DAILY_SYMPTOM', currentContext);
@@ -300,14 +292,19 @@ async function handleEvent(event) {
       dailySummary += `ระบบบันทึกความเปลี่ยนแปลงสุขภาพของคุณไว้ในฐานข้อมูลเรียบร้อยครับ พรุ่งนี้มาเช็กอินใหม่นะ!\n\n` + mainMenuText;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: dailySummary }] });
 
-
-    // --- โหมดค้นหาโภชนาการอาหารโรงอาหาร (ยิงตรง Supabase) ---
+    // --- โหมดค้นหาโภชนาการอาหารโรงอาหาร ---
     case 'SEARCH_NUTRIENT':
-      let { data: matchedMenus } = await supabase
+      const keyword = userMessage.trim();
+
+      let { data: matchedMenus, error: searchError } = await supabase
         .from('canteen_menus')
         .select('*')
-        .ilike('menu_name', `%${userMessage}%`)
-        .limit(3);
+        .ilike('menu_name', `%${keyword}%`)
+        .limit(5);
+
+      if (searchError) {
+        console.error('Supabase Search Error:', searchError);
+      }
 
       if (matchedMenus && matchedMenus.length > 0) {
         let resultText = `🥗 [ผลการค้นหาเมนูโรงอาหารจากฐานข้อมูล]\n`;
@@ -330,8 +327,6 @@ async function handleEvent(event) {
         });
       }
 
-
-    // --- โหมดประเมินสุขภาพจิตรายเดือน ---
     case 'MONTHLY_MENTAL':
       const validScores = ['0', '1', '2', '3'];
       if (!validScores.includes(userMessage)) {

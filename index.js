@@ -15,18 +15,6 @@ const client = new line.messagingApi.MessagingApiClient({
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const app = express();
 
-// คลังข้อมูลเมนูอาหารละเอียด (สำหรับฟีเจอร์ที่ 4 และ 5)
-const CANTEEN_DATA = {
-  'เกาเหลาน้ำใส': { cals: 180, carb: 8, protein: 22, fat: 6, info: 'โซเดียมปานกลาง เลี่ยงซดน้ำซุปจะดีมาก' },
-  'ต้มจืดเต้าหู้หมูสับ': { cals: 200, carb: 10, protein: 18, fat: 8, info: 'ย่อยง่าย โปรตีนดี โซเดียมน้อย' },
-  'แกงส้มผักรวม': { cals: 120, carb: 15, protein: 4, fat: 0, info: 'ไม่มีน้ำมัน แต่โซเดียมค่อนข้างสูง' },
-  'กะเพราอกไก่ข้าวกล้อง': { cals: 380, carb: 45, protein: 30, fat: 6, info: 'สารอาหารครบถ้วน เหมาะกับการคุมน้ำหนัก' },
-  'ข้าวต้มปลา': { cals: 250, carb: 30, protein: 18, fat: 2, info: 'ไขมันต่ำมาก อิ่มสบายท้อง' },
-  'ส้มตำไทยไก่ย่าง': { cals: 280, carb: 22, protein: 25, fat: 7, info: 'ระวังเรื่องความหวานและโซเดียมในน้ำส้มตำ' },
-  'ข้าวมันไก่เนื้ออก': { cals: 350, carb: 40, protein: 28, fat: 8, info: 'เน้นอกไก่ไม่หนัง สั่งเปลี่ยนเป็นข้าวสวยธรรมดาจะลดแคลได้อีก' },
-  'สลัดผักอกไก่': { cals: 220, carb: 12, protein: 24, fat: 5, info: 'ไฟเบอร์สูง แนะนำน้ำสลัดใสหรือใส่น้อย ๆ' }
-};
-
 const MENTAL_QUESTIONS = [
   { id: 1, text: "1. ท่านรู้สึกพึงพอใจในชีวิต" },
   { id: 2, text: "2. ท่านรู้สึกสบายใจ" },
@@ -84,8 +72,8 @@ async function handleEvent(event) {
                        `1️⃣ [ลงทะเบียนประวัติสุขภาพ] (แก้ไขข้อมูลเริ่มต้น)\n` +
                        `2️⃣ [อัปเดตน้ำหนัก/ส่วนสูง] (ปรับสัดส่วนปัจจุบันเพื่อคำนวณ BMI ใหม่)\n` +
                        `3️⃣ [บันทึกสุขภาพรายวัน] (เช็กอินความรู้สึกและอาการป่วยวันต่อวัน)\n` +
-                       `4️⃣ [แนะนำอาหารลดน้ำหนักโรงอาหาร] (จัดเมนูตามแคลอรีเฉพาะบุคคล)\n` +
-                       `5️⃣ [ค้นหาโภชนาการเมนูโรงอาหาร] (เช็กแคล/คาร์บ/โปรตีน ของแต่ละเมนู)\n` +
+                       `4️⃣ [แนะนำอาหารลดน้ำหนักโรงอาหาร] (สุ่มคัดสรรเมนูตามแคลอรีเฉพาะบุคคล)\n` +
+                       `5️⃣ [ค้นหาโภชนาการเมนูโรงอาหาร] (ค้นหาแคล/คาร์บ/โปรตีน จากคลัง 158+ เมนู)\n` +
                        `6️⃣ [แบบทดสอบสุขภาพจิตรายเดือน] (ทำประเมินสุขภาพจิตและสภาวะอารมณ์)\n\n` +
                        `👉 พิมพ์หมายเลขเมนู หรือพิมพ์ "เมนูหลัก" เพื่อกลับหน้านี้ได้ตลอดเวลาครับ`;
 
@@ -119,7 +107,7 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔄 อัปเดตสัดส่วนร่างกายปัจจุบัน\n\nโปรดพิมพ์ น้ำหนัก ของคุณเป็นตัวเลข (กก.) เช่น 65' }] });
     }
 
-    // เมนู 3: บันทึกประจำวัน (สั้น กระชับ จบในตัวไม่มีการลิ้งค์ไปทำแบบทดสอบต่อ)
+    // เมนู 3: บันทึกประจำวัน
     if (userMessage === '3' || userMessage.includes('บันทึกประจำวัน')) {
       await updateState(userId, 'DAILY_MOOD', {});
       return client.replyMessage({
@@ -139,38 +127,59 @@ async function handleEvent(event) {
       });
     }
 
-    // เมนู 4: แนะนำอาหารลดน้ำหนักอิงตามสรีระ BMR/TDEE ของผู้ใช้
+    // เมนู 4: แนะนำอาหารลดน้ำหนัก (ดึงตรงจาก Supabase คลัง 158+ เมนู)
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
       const tdee = profile.tdee || 2000;
       const targetCal = Math.round((tdee - 500) / 3); // โควตาลดน้ำหนักต่อมื้อ
+
+      // ดึงเมนูในคลัง Supabase ที่มีแคลอรีไม่เกิน targetCal
+      let { data: fitMenus } = await supabase
+        .from('canteen_menus')
+        .select('*')
+        .lte('calories', targetCal)
+        .limit(30);
+
+      // ถ้าค้นหาแล้วไม่เจอ ให้ดึงเมนูทั่วไปสุ่มมา
+      if (!fitMenus || fitMenus.length === 0) {
+        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(10);
+        fitMenus = fallback || [];
+      }
+
+      // สุ่มคัดมา 3 เมนูเพื่อความหลากหลาย
+      const randomSelected = fitMenus.sort(() => 0.5 - Math.random()).slice(0, 3);
 
       let foodResponse = `🏪 [เมนูแนะนำเพื่อลดน้ำหนักในโรงอาหารของคุณ]\n`;
       foodResponse += `📊 เป้าหมายพลังงานมื้อนี้: ไม่ควรเกิน **${targetCal} kcal**\n`;
       foodResponse += `🩺 โรคประจำตัว: ${profile.chronic_disease} | พฤติกรรม: ${profile.lifestyle}\n`;
       foodResponse += `-------------------------------------\n\n`;
-      foodResponse += `💡 เมนูโรงอาหารที่แนะนำ:\n`;
-      foodResponse += `• เกาเหลาน้ำใสหมูสับ/อกไก่ (~180 kcal)\n`;
-      foodResponse += `• ต้มจืดเต้าหู้หมูสับวุ้นเส้น (~200 kcal)\n`;
-      foodResponse += `• แกงส้มผักรวม + ข้าวสวยข้าวกล้อง 1.5 ทัพพี (~250 kcal)\n`;
-      foodResponse += `• กะเพราอกไก่ (น้ำมันน้อย) + ข้าวกล้อง (~380 kcal)\n\n`;
-      
-      if (profile.chronic_disease.includes('ความดัน')) {
-        foodResponse += `⚠️ *คำแนะนำพิเศษ*: หลีกเลี่ยงการซดน้ำซุปก๋วยเตี๋ยวหรือแกงส้ม เพื่อควบคุมปริมาณโซเดียมไม่ให้สูงเกินไปนะครับ\n`;
+      foodResponse += `💡 เมนูคัดสรรแนะนำประจำมื้อนี้:\n`;
+
+      if (randomSelected.length > 0) {
+        randomSelected.forEach((item, idx) => {
+          foodResponse += `${idx + 1}. **${item.menu_name}** (~${item.calories} kcal)\n`;
+        });
+      } else {
+        foodResponse += `• เกาเหลาน้ำใส (~180 kcal)\n• ต้มจืดเต้าหู้หมูสับ (~200 kcal)\n`;
+      }
+
+      foodResponse += `\n`;
+      if (profile.chronic_disease && profile.chronic_disease.includes('ความดัน')) {
+        foodResponse += `⚠️ *คำแนะนำพิเศษ*: หลีกเลี่ยงการซดน้ำซุปหรือเมนูรสจัด เพื่อควบคุมปริมาณโซเดียมนะครับ\n\n`;
       }
       foodResponse += `🏠 พิมพ์ "เมนูหลัก" เพื่อกลับไปหน้ารวมฟีเจอร์`;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: foodResponse }] });
     }
 
-    // เมนู 5: ฟีเจอร์แยกใหม่ - ค้นหาแคลอรี่และคาร์โบไฮเดรตในเมนูโรงอาหาร
+    // เมนู 5: ค้นหาคุณค่าทางโภชนาการ (ดึงจาก Supabase สดๆ)
     if (userMessage === '5' || userMessage.includes('ค้นหา')) {
       await updateState(userId, 'SEARCH_NUTRIENT', {});
       let searchIntro = `🔍 [โหมดค้นหาคุณค่าทางโภชนาการเมนูโรงอาหาร]\n\n`;
-      searchIntro += `โปรดพิมพ์ชื่อเมนูที่ต้องการตรวจสอบสารอาหารมาได้เลยครับ\n`;
-      searchIntro += `*(ตัวอย่างเมนูที่มีในฐานข้อมูลโรงอาหารตอนนี้: เกาเหลาน้ำใส, ต้มจืดเต้าหู้หมูสับ, แกงส้มผักรวม, กะเพราอกไก่ข้าวกล้อง, ข้าวต้มปลา, ส้มตำไทยไก่ย่าง, ข้าวมันไก่เนื้ออก, สลัดผักอกไก่)*`;
+      searchIntro += `โปรดพิมพ์ชื่อเมนูหรือคำสำคัญที่ต้องการค้นหามาได้เลยครับ (ระบบจะค้นจากคลัง 158+ เมนู)\n\n`;
+      searchIntro += `*(ตัวอย่าง: พิมพ์คำว่า "กะเพรา", "แกง", "ไก่", "หมู" หรือชื่อเมนูเต็มได้เลยครับ)*`;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: searchIntro }] });
     }
 
-    // เมนู 6: ย้ายแบบทดสอบสุขภาพจิตมาเป็นโหมดรายเดือนเดี่ยว ๆ แยกเป็นสัดส่วน
+    // เมนู 6: ประเมินสุขภาพจิตรายเดือน
     if (userMessage === '6' || userMessage.includes('สุขภาพจิต')) {
       currentContext.current_q = 1;
       currentContext.scores = {};
@@ -203,7 +212,7 @@ async function handleEvent(event) {
           text: 'คุณมีโรคประจำตัวหรือไม่ครับ? (กดเลือกจากปุ่มด่วนด้านล่างได้เลย)',
           quickReply: {
             items: [
-              { type: 'action', action: { type: 'message', label: '❌ ไม่มีโรคประจำตัว', text: 'ไม่มี' } }, // เพิ่มปุ่มไม่มีตามคำสั่ง
+              { type: 'action', action: { type: 'message', label: '❌ ไม่มีโรคประจำตัว', text: 'ไม่มี' } },
               { type: 'action', action: { type: 'message', label: '🩺 ความดันโลหิตสูง', text: 'ความดันโลหิตสูง' } },
               { type: 'action', action: { type: 'message', label: '🩸 เบาหวาน', text: 'เบาหวาน' } },
               { type: 'action', action: { type: 'message', label: '🫀 โรคหัวใจ', text: 'โรคหัวใจ' } }
@@ -272,7 +281,7 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💪 อัปเดตสัดส่วนสรีระร่างกายและดัชนีพลังงานใหม่เรียบร้อยครับ!\n\n' + mainMenuText }] });
 
 
-    // --- โหมดบันทึกรายวัน (ความรู้สึก + อาการป่วย) ---
+    // --- โหมดบันทึกรายวัน ---
     case 'DAILY_MOOD':
       currentContext.mood = userMessage;
       await updateState(userId, 'DAILY_SYMPTOM', currentContext);
@@ -292,26 +301,32 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: dailySummary }] });
 
 
-    // --- โหมดค้นหาโภชนาการอาหารโรงอาหาร (ฟีเจอร์ที่ 5) ---
+    // --- โหมดค้นหาโภชนาการอาหารโรงอาหาร (ยิงตรง Supabase) ---
     case 'SEARCH_NUTRIENT':
-      let matchedKey = Object.keys(CANTEEN_DATA).find(k => userMessage.includes(k) || k.includes(userMessage));
-      
-      if (matchedKey) {
-        const meal = CANTEEN_DATA[matchedKey];
-        let resultText = `🥗 [ข้อมูลโภชนาการ: เมนู${matchedKey}]\n`;
+      let { data: matchedMenus } = await supabase
+        .from('canteen_menus')
+        .select('*')
+        .ilike('menu_name', `%${userMessage}%`)
+        .limit(3);
+
+      if (matchedMenus && matchedMenus.length > 0) {
+        let resultText = `🥗 [ผลการค้นหาเมนูโรงอาหารจากฐานข้อมูล]\n`;
         resultText += `-------------------------------------\n`;
-        resultText += `🔥 พลังงานทั้งหมด: **${meal.cals} kcal**\n`;
-        resultText += `🍞 คาร์โบไฮเดรต: **${meal.carb} กรัม**\n`;
-        resultText += `🥩 โปรตีน: **${meal.protein} กรัม**\n`;
-        resultText += `🥑 ไขมัน: **${meal.fat} กรัม**\n`;
-        resultText += `ℹ️ ข้อแนะนำ: ${meal.info}\n`;
-        resultText += `-------------------------------------\n\n`;
-        resultText += `🔍 สามารถพิมพ์ค้นหาเมนูอื่นต่อไปได้เลย หรือพิมพ์ "เมนูหลัก" เพื่อเลิกค้นหาครับ`;
+        
+        matchedMenus.forEach((meal) => {
+          resultText += `📌 **${meal.menu_name}**\n`;
+          resultText += `🔥 พลังงาน: **${meal.calories || '-'} kcal**\n`;
+          resultText += `🍞 คาร์บ: ${meal.carbs || '-'}g | 🥩 โปรตีน: ${meal.protein || '-'}g | 🥑 ไขมัน: ${meal.fat || '-'}g\n`;
+          if (meal.note) resultText += `ℹ️ คำแนะนำ: ${meal.note}\n`;
+          resultText += `-------------------------------------\n`;
+        });
+        
+        resultText += `\n🔍 พิมพ์ค้นหาเมนูอื่นต่อได้เลย หรือพิมพ์ "เมนูหลัก" เพื่อเลิกค้นหาครับ`;
         return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: resultText }] });
       } else {
         return client.replyMessage({ 
           replyToken: event.replyToken, 
-          messages: [{ type: 'text', text: `❌ ไม่พบข้อมูลเมนู "${userMessage}" ในฐานข้อมูลโรงอาหารตอนนี้\n\nทดลองพิมพ์คำสำคัญสั้น ๆ เช่น ข้าวมันไก่, กะเพรา, แกงส้ม หรือพิมพ์ "เมนูหลัก" เพื่อออกจากการค้นหาครับ` }] 
+          messages: [{ type: 'text', text: `❌ ไม่พบเมนู "${userMessage}" ในฐานข้อมูล 158 รายการ\n\nลองพิมพ์คำสั้นๆ เช่น "ไก่", "หมู", "แกง" หรือพิมพ์ "เมนูหลัก" เพื่อออกจากการค้นหาครับ` }] 
         });
       }
 
@@ -354,7 +369,6 @@ async function handleEvent(event) {
   }
 }
 
-// ฟังก์ชันช่วยยิงการ์ดคำถามสุขภาพจิตพร้อมตัวเลือกด่วน
 function sendMentalQuestion(event, qId, prefix) {
   const question = MENTAL_QUESTIONS.find(q => q.id === qId);
   return client.replyMessage({
@@ -395,5 +409,5 @@ async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server runs perfectly with 5 Features!');
+  console.log('Server runs perfectly connected to Supabase Canteen Database!');
 });

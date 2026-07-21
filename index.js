@@ -15,6 +15,19 @@ const client = new line.messagingApi.MessagingApiClient({
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const app = express();
 
+// 🎨 Theme Colors (Clean Health Theme)
+const COLORS = {
+  PRIMARY: "#0D9488",    // Teal เข้ม สบายตา สำหรับ Header หลัก
+  SECONDARY: "#10B981",  // Emerald Green สำหรับปุ่มแอ็กชันหลัก
+  ACCENT: "#0284C7",     // Soft Blue สำหรับข้อมูลสถิติ
+  NEUTRAL_DARK: "#1F2937",
+  NEUTRAL_LIGHT: "#F3F4F6",
+  SUCCESS: "#059669",
+  WARNING: "#D97706",
+  DANGER: "#DC2626",
+  WHITE: "#FFFFFF"
+};
+
 const MENTAL_QUESTIONS = [
   { id: 1, text: "1. ท่านรู้สึกพึงพอใจในชีวิต" },
   { id: 2, text: "2. ท่านรู้สึกสบายใจ" },
@@ -23,7 +36,7 @@ const MENTAL_QUESTIONS = [
   { id: 5, text: "5. ท่านรู้สึกเบื่อหน่ายท้อแท้กับการดำเนินชีวิตประจำวัน" }
 ];
 
-app.get('/', (req, res) => res.send('Health Bot v3 with Full Flex Message is running!'));
+app.get('/', (req, res) => res.send('Health Bot v4 with Beautiful UI is running!'));
 
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
@@ -91,7 +104,7 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔄 อัปเดตสัดส่วนร่างกายปัจจุบัน\n\nโปรดพิมพ์ น้ำหนัก ของคุณเป็นตัวเลข (กก.) เช่น 65' }] });
     }
 
-    // เมนู 3: บันทึกประจำวัน (Flex Card)
+    // เมนู 3: บันทึกประจำวัน (Soft Pastel Palette)
     if (userMessage === '3' || userMessage.includes('บันทึกประจำวัน')) {
       await updateState(userId, 'DAILY_MOOD', {});
       const moodCard = {
@@ -100,22 +113,19 @@ async function handleEvent(event) {
         contents: {
           type: "bubble",
           header: {
-            type: "box",
-            layout: "vertical",
-            backgroundColor: "#FF9800",
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🌤️ บันทึกสุขภาพประจำวัน", color: "#FFFFFF", weight: "bold", size: "lg" },
-              { type: "text", text: "วันนี้คุณรู้สึกอย่างไรบ้างครับ?", color: "#FFF3E0", size: "xs", margin: "xs" }
+              { type: "text", text: "🌤️ บันทึกสุขภาพประจำวัน", color: COLORS.WHITE, weight: "bold", size: "md" },
+              { type: "text", text: "วันนี้คุณรู้สึกอย่างไรบ้างครับ?", color: "#E6FFFA", size: "xs", margin: "xs" }
             ]
           },
           body: {
-            type: "box",
-            layout: "vertical",
+            type: "box", layout: "vertical",
             contents: [
-              { type: "button", style: "primary", color: "#4CAF50", margin: "xs", action: { type: "message", label: "😊 มีความสุข / สดชื่น", text: "มีความสุข" } },
-              { type: "button", style: "primary", color: "#2196F3", margin: "sm", action: { type: "message", label: "😐 ปกติธรรมดา", text: "ปกติ" } },
-              { type: "button", style: "primary", color: "#FF9800", margin: "sm", action: { type: "message", label: "😴 เหนื่อยล้า / อ่อนเพลีย", text: "เหนื่อยล้า" } },
-              { type: "button", style: "primary", color: "#F44336", margin: "sm", action: { type: "message", label: "😫 เครียด / กังวล", text: "เครียด" } }
+              { type: "button", style: "primary", color: "#10B981", margin: "xs", action: { type: "message", label: "😊 มีความสุข / สดชื่น", text: "มีความสุข" } },
+              { type: "button", style: "primary", color: "#6B7280", margin: "sm", action: { type: "message", label: "😐 ปกติธรรมดา", text: "ปกติ" } },
+              { type: "button", style: "primary", color: "#F59E0B", margin: "sm", action: { type: "message", label: "😴 เหนื่อยล้า / อ่อนเพลีย", text: "เหนื่อยล้า" } },
+              { type: "button", style: "primary", color: "#EF4444", margin: "sm", action: { type: "message", label: "😫 เครียด / กังวล", text: "เครียด" } }
             ]
           }
         }
@@ -123,7 +133,7 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [moodCard] });
     }
 
-    // เมนู 4: แนะนำอาหาร (Flex Card)
+    // เมนู 4: แนะนำอาหาร (Theme เขียว Teal สวยงาม)
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
       const tdee = profile?.tdee || 2000;
       const targetCal = Math.round((tdee - 500) / 3);
@@ -141,8 +151,8 @@ async function handleEvent(event) {
         layout: "horizontal",
         margin: "md",
         contents: [
-          { type: "text", text: `${idx + 1}. ${item.menu_name}`, size: "sm", color: "#111111", flex: 4, weight: "bold" },
-          { type: "text", text: `${item.calories} kcal`, size: "sm", color: "#22B573", align: "end", flex: 2, weight: "bold" }
+          { type: "text", text: `${idx + 1}. ${item.menu_name}`, size: "sm", color: COLORS.NEUTRAL_DARK, flex: 4, weight: "bold" },
+          { type: "text", text: `${item.calories} kcal`, size: "sm", color: COLORS.PRIMARY, align: "end", flex: 2, weight: "bold" }
         ]
       }));
 
@@ -152,31 +162,27 @@ async function handleEvent(event) {
         contents: {
           type: "bubble",
           header: {
-            type: "box",
-            layout: "vertical",
-            backgroundColor: "#22B573",
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🍱 เมนูแนะนำเพื่อสุขภาพ", weight: "bold", size: "lg", color: "#FFFFFF" },
-              { type: "text", text: `เป้าหมายมื้อนี้: ไม่เกิน ${targetCal} kcal`, size: "xs", color: "#E0F7FA", margin: "xs" }
+              { type: "text", text: "🍱 เมนูแนะนำเพื่อสุขภาพ", weight: "bold", size: "lg", color: COLORS.WHITE },
+              { type: "text", text: `เป้าหมายมื้อนี้: ไม่เกิน ${targetCal} kcal`, size: "xs", color: "#CCFBF1", margin: "xs" }
             ]
           },
           body: {
-            type: "box",
-            layout: "vertical",
+            type: "box", layout: "vertical",
             contents: [
-              { type: "text", text: `🩺 โรคประจำตัว: ${chronicDisease}`, size: "xs", color: "#666666" },
+              { type: "text", text: `🩺 โรคประจำตัว: ${chronicDisease}`, size: "xs", color: "#6B7280" },
               { type: "separator", margin: "md" },
-              { type: "text", text: "💡 เมนูแนะนำคัดสรรจากโรงอาหาร:", size: "xs", color: "#999999", margin: "md" },
+              { type: "text", text: "💡 เมนูแนะนำคัดสรรจากโรงอาหาร:", size: "xs", color: "#9CA3AF", margin: "md" },
               ...menuContents,
               { type: "separator", margin: "lg" },
-              { type: "text", text: chronicDisease.includes('ความดัน') ? "⚠️ หลีกเลี่ยงน้ำซุปหรือเมนูรสจัด เพื่อลดโซเดียม" : "✨ เลือกทานอาหารให้หลากหลาย และดื่มน้ำตามมากๆ นะครับ", size: "xs", color: "#FF5722", wrap: true, margin: "md" }
+              { type: "text", text: chronicDisease.includes('ความดัน') ? "⚠️ หลีกเลี่ยงน้ำซุปหรือเมนูรสจัด เพื่อลดโซเดียม" : "✨ เลือกทานอาหารให้หลากหลาย และดื่มน้ำตามมากๆ นะครับ", size: "xs", color: COLORS.WARNING, wrap: true, margin: "md" }
             ]
           },
           footer: {
-            type: "box",
-            layout: "vertical",
+            type: "box", layout: "vertical",
             contents: [
-              { type: "button", style: "primary", color: "#22B573", action: { type: "message", label: "🎲 สุ่มเมนูใหม่อีกครั้ง", text: "4" } }
+              { type: "button", style: "primary", color: COLORS.SECONDARY, action: { type: "message", label: "🎲 สุ่มเมนูใหม่อีกครั้ง", text: "4" } }
             ]
           }
         }
@@ -219,26 +225,26 @@ async function handleEvent(event) {
       currentContext.age = age;
       await updateState(userId, 'REG_DISEASE', currentContext);
       
-      // Flex Card เลือกโรคประจำตัว
+      // Flex Card เลือกโรคประจำตัว (คุมโทน Teal + ตัวอักษรสีขาว อ่านง่าย 100%)
       const diseaseCard = {
         type: "flex",
         altText: "โปรดเลือกโรคประจำตัวของคุณ",
         contents: {
           type: "bubble",
           header: {
-            type: "box", layout: "vertical", backgroundColor: "#0288D1",
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🩺 ประวัติสุขภาพ (3/5)", color: "#FFFFFF", weight: "bold", size: "xs" },
-              { type: "text", text: "คุณมีโรคประจำตัวหรือไม่ครับ?", color: "#FFFFFF", weight: "bold", size: "md", margin: "xs" }
+              { type: "text", text: "🩺 ประวัติสุขภาพ (3/5)", color: "#CCFBF1", weight: "bold", size: "xs" },
+              { type: "text", text: "คุณมีโรคประจำตัวหรือไม่ครับ?", color: COLORS.WHITE, weight: "bold", size: "md", margin: "xs" }
             ]
           },
           body: {
             type: "box", layout: "vertical",
             contents: [
-              { type: "button", style: "primary", color: "#4CAF50", margin: "xs", action: { type: "message", label: "❌ ไม่มีโรคประจำตัว", text: "ไม่มี" } },
-              { type: "button", style: "secondary", color: "#0288D1", margin: "sm", action: { type: "message", label: "🩺 ความดันโลหิตสูง", text: "ความดันโลหิตสูง" } },
-              { type: "button", style: "secondary", color: "#0288D1", margin: "sm", action: { type: "message", label: "🩸 เบาหวาน", text: "เบาหวาน" } },
-              { type: "button", style: "secondary", color: "#0288D1", margin: "sm", action: { type: "message", label: "🫀 โรคหัวใจ", text: "โรคหัวใจ" } }
+              { type: "button", style: "primary", color: COLORS.SECONDARY, margin: "xs", action: { type: "message", label: "❌ ไม่มีโรคประจำตัว", text: "ไม่มี" } },
+              { type: "button", style: "primary", color: "#4B5563", margin: "sm", action: { type: "message", label: "🩺 ความดันโลหิตสูง", text: "ความดันโลหิตสูง" } },
+              { type: "button", style: "primary", color: "#4B5563", margin: "sm", action: { type: "message", label: "🩸 เบาหวาน", text: "เบาหวาน" } },
+              { type: "button", style: "primary", color: "#4B5563", margin: "sm", action: { type: "message", label: "🫀 โรคหัวใจ", text: "โรคหัวใจ" } }
             ]
           }
         }
@@ -249,25 +255,25 @@ async function handleEvent(event) {
       currentContext.chronic_disease = userMessage;
       await updateState(userId, 'REG_LIFESTYLE', currentContext);
 
-      // Flex Card เลือกพฤติกรรม
+      // Flex Card เลือกพฤติกรรม (คุมโทน Teal + ปุ่มสีกลางละมุนตา)
       const lifestyleCard = {
         type: "flex",
         altText: "โปรดเลือกพฤติกรรมการใช้ชีวิต",
         contents: {
           type: "bubble",
           header: {
-            type: "box", layout: "vertical", backgroundColor: "#7B1FA2",
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🏃‍♂️ พฤติกรรมประจำวัน (4/5)", color: "#FFFFFF", weight: "bold", size: "xs" },
-              { type: "text", text: "พฤติกรรมการใช้ชีวิตของคุณเป็นอย่างไร?", color: "#FFFFFF", weight: "bold", size: "sm", margin: "xs" }
+              { type: "text", text: "🏃‍♂️ พฤติกรรมประจำวัน (4/5)", color: "#CCFBF1", weight: "bold", size: "xs" },
+              { type: "text", text: "พฤติกรรมการใช้ชีวิตของคุณเป็นอย่างไร?", color: COLORS.WHITE, weight: "bold", size: "sm", margin: "xs" }
             ]
           },
           body: {
             type: "box", layout: "vertical",
             contents: [
-              { type: "button", style: "primary", color: "#7B1FA2", margin: "xs", action: { type: "message", label: "🖥️ นั่งทำงาน / เรียนหนังสือ", text: "นั่งทำงานทั่วไป" } },
-              { type: "button", style: "primary", color: "#7B1FA2", margin: "sm", action: { type: "message", label: "🛠️ ทำงานหนัก / ออกแรงมาก", text: "ทำงานหนักใช้แรง" } },
-              { type: "button", style: "primary", color: "#7B1FA2", margin: "sm", action: { type: "message", label: "🚬 สูบบุหรี่ หรือ ดื่มสุรา", text: "สูบบุหรี่หรือดื่ม" } }
+              { type: "button", style: "primary", color: "#0284C7", margin: "xs", action: { type: "message", label: "🖥️ นั่งทำงาน / เรียนหนังสือ", text: "นั่งทำงานทั่วไป" } },
+              { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🛠️ ทำงานหนัก / ออกแรงมาก", text: "ทำงานหนักใช้แรง" } },
+              { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🚬 สูบบุหรี่ หรือ ดื่มสุรา", text: "สูบบุหรี่หรือดื่ม" } }
             ]
           }
         }
@@ -331,33 +337,32 @@ async function handleEvent(event) {
 
       await updateState(userId, 'MAIN_MENU', {});
 
-      // Flex Card ใบเสร็จสรุปรายวัน
+      // Flex Card สรุปรายวัน โทน Teal สะอาดตา
       const dailySummaryCard = {
         type: "flex",
         altText: "📝 สรุปบันทึกสุขภาพรายวัน",
         contents: {
           type: "bubble",
           header: {
-            type: "box", layout: "vertical", backgroundColor: "#FF9800",
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "📝 บันทึกสุขภาพสำเร็จ", color: "#FFFFFF", weight: "bold", size: "md" },
-              { type: "text", text: `ประจำวันที่ ${todayStr}`, color: "#FFF3E0", size: "xs", margin: "xs" }
+              { type: "text", text: "📝 บันทึกสุขภาพสำเร็จ", color: COLORS.WHITE, weight: "bold", size: "md" },
+              { type: "text", text: `ประจำวันที่ ${todayStr}`, color: "#CCFBF1", size: "xs", margin: "xs" }
             ]
           },
           body: {
             type: "box", layout: "vertical",
             contents: [
-              { type: "text", text: `• ความรู้สึกวันนี้: ${currentContext.mood}`, size: "sm", color: "#333333" },
-              { type: "text", text: `• อาการป่วยทางกาย: ${userMessage}`, size: "sm", color: "#333333", margin: "xs" },
+              { type: "text", text: `• ความรู้สึกวันนี้: ${currentContext.mood}`, size: "sm", color: COLORS.NEUTRAL_DARK },
+              { type: "text", text: `• อาการป่วยทางกาย: ${userMessage}`, size: "sm", color: COLORS.NEUTRAL_DARK, margin: "xs" },
               { type: "separator", margin: "md" },
-              { type: "text", text: "บันทึกข้อมูลลงคลังเรียบร้อยครับ พรุ่งนี้มาเช็กอินใหม่นะ!", size: "xs", color: "#888888", margin: "md" }
+              { type: "text", text: "บันทึกข้อมูลลงคลังเรียบร้อยครับ พรุ่งนี้มาเช็กอินใหม่นะ!", size: "xs", color: "#6B7280", margin: "md" }
             ]
           }
         }
       };
       return client.replyMessage({ replyToken: event.replyToken, messages: [dailySummaryCard, { type: 'text', text: mainMenuText }] });
 
-    // 🌟 เมนู 5: แสดงผลค้นหาเป็น Flex Message การ์ดเมนูอาหาร
     case 'SEARCH_NUTRIENT':
       const keyword = userMessage.trim();
 
@@ -371,20 +376,20 @@ async function handleEvent(event) {
         const bubbles = matchedMenus.map((meal) => ({
           type: "bubble",
           header: {
-            type: "box", layout: "vertical", backgroundColor: "#009688",
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: meal.menu_name, weight: "bold", size: "md", color: "#FFFFFF", wrap: true },
-              { type: "text", text: `🔥 พลังงาน: ${meal.calories || '-'} kcal`, size: "xs", color: "#E0F2F1", margin: "xs" }
+              { type: "text", text: meal.menu_name, weight: "bold", size: "md", color: COLORS.WHITE, wrap: true },
+              { type: "text", text: `🔥 พลังงาน: ${meal.calories || '-'} kcal`, size: "xs", color: "#CCFBF1", margin: "xs" }
             ]
           },
           body: {
             type: "box", layout: "vertical",
             contents: [
-              { type: "text", text: `🍞 คาร์โบไฮเดรต: ${meal.carbs || '-'} g`, size: "xs", color: "#555555" },
-              { type: "text", text: `🥩 โปรตีน: ${meal.protein || '-'} g`, size: "xs", color: "#555555", margin: "xs" },
-              { type: "text", text: `🥑 ไขมัน: ${meal.fat || '-'} g`, size: "xs", color: "#555555", margin: "xs" },
+              { type: "text", text: `🍞 คาร์โบไฮเดรต: ${meal.carbs || '-'} g`, size: "xs", color: "#4B5563" },
+              { type: "text", text: `🥩 โปรตีน: ${meal.protein || '-'} g`, size: "xs", color: "#4B5563", margin: "xs" },
+              { type: "text", text: `🥑 ไขมัน: ${meal.fat || '-'} g`, size: "xs", color: "#4B5563", margin: "xs" },
               { type: "separator", margin: "md" },
-              { type: "text", text: meal.note ? `ℹ️ ${meal.note}` : "✨ เมนูโภชนาการมาตรฐานโรงอาหาร", size: "xs", color: "#00796B", wrap: true, margin: "md" }
+              { type: "text", text: meal.note ? `ℹ️ ${meal.note}` : "✨ เมนูโภชนาการมาตรฐานโรงอาหาร", size: "xs", color: COLORS.PRIMARY, wrap: true, margin: "md" }
             ]
           }
         }));
@@ -422,12 +427,11 @@ async function handleEvent(event) {
         for (const id in currentContext.scores) { totalScore += currentContext.scores[id]; }
 
         let mentalResult = totalScore <= 5 ? "🚨 อยู่ในสภาวะมีความเสี่ยงตึงเครียดสะสม" : "🟢 ระดับสุขภาพใจปกติ มีความสมดุลดี";
-        let headerBg = totalScore <= 5 ? "#E53935" : "#4CAF50";
+        let headerBg = totalScore <= 5 ? COLORS.DANGER : COLORS.SUCCESS;
         
         await supabase.from('mental_health_scores').insert({ user_id: userId, total_score: totalScore, result_text: mentalResult });
         await updateState(userId, 'MAIN_MENU', {});
 
-        // Flex Card สรุปผลสุขภาพจิต
         const mentalResultCard = {
           type: "flex",
           altText: "🧠 รายงานผลประเมินสุขภาพจิต",
@@ -436,17 +440,17 @@ async function handleEvent(event) {
             header: {
               type: "box", layout: "vertical", backgroundColor: headerBg,
               contents: [
-                { type: "text", text: "🧠 ผลประเมินสุขภาพจิต", color: "#FFFFFF", weight: "bold", size: "md" },
-                { type: "text", text: "ประเมินสภาวะใจรายเดือน", color: "#FFFFFF", size: "xs", margin: "xs" }
+                { type: "text", text: "🧠 ผลประเมินสุขภาพจิต", color: COLORS.WHITE, weight: "bold", size: "md" },
+                { type: "text", text: "ประเมินสภาวะใจรายเดือน", color: COLORS.WHITE, size: "xs", margin: "xs" }
               ]
             },
             body: {
               type: "box", layout: "vertical",
               contents: [
-                { type: "text", text: `📊 คะแนนรวม: ${totalScore} / 15 คะแนน`, weight: "bold", size: "md", color: "#333333" },
+                { type: "text", text: `📊 คะแนนรวม: ${totalScore} / 15 คะแนน`, weight: "bold", size: "md", color: COLORS.NEUTRAL_DARK },
                 { type: "text", text: `🔍 วิเคราะห์: ${mentalResult}`, weight: "bold", size: "sm", color: headerBg, margin: "sm", wrap: true },
                 { type: "separator", margin: "md" },
-                { type: "text", text: "ขอบคุณที่ร่วมประเมินสภาวะใจอย่างสม่ำเสมอครับ ยินดีต้อนรับกลับเข้าสู่หน้าหลัก", size: "xs", color: "#888888", margin: "md", wrap: true }
+                { type: "text", text: "ขอบคุณที่ร่วมประเมินสภาวะใจอย่างสม่ำเสมอครับ ยินดีต้อนรับกลับเข้าสู่หน้าหลัก", size: "xs", color: "#6B7280", margin: "md", wrap: true }
               ]
             }
           }
@@ -461,7 +465,7 @@ async function handleEvent(event) {
   }
 }
 
-// ฟังก์ชันส่งการ์ดเลือกเพศ Flex Message
+// การ์ดเลือกเพศ โทน Teal คลีนๆ
 function getGenderFlexCard(title) {
   return {
     type: "flex",
@@ -469,17 +473,17 @@ function getGenderFlexCard(title) {
     contents: {
       type: "bubble",
       header: {
-        type: "box", layout: "vertical", backgroundColor: "#1E88E5",
+        type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
         contents: [
-          { type: "text", text: "👤 ลงทะเบียนประวัติ (1/5)", color: "#FFFFFF", weight: "bold", size: "xs" },
-          { type: "text", text: title, color: "#FFFFFF", weight: "bold", size: "sm", margin: "xs", wrap: true }
+          { type: "text", text: "👤 ลงทะเบียนประวัติ (1/5)", color: "#CCFBF1", weight: "bold", size: "xs" },
+          { type: "text", text: title, color: COLORS.WHITE, weight: "bold", size: "sm", margin: "xs", wrap: true }
         ]
       },
       body: {
         type: "box", layout: "vertical",
         contents: [
-          { type: "button", style: "primary", color: "#2196F3", margin: "xs", action: { type: "message", label: "🙋‍♂️ ชาย (Male)", text: "ชาย" } },
-          { type: "button", style: "primary", color: "#E91E63", margin: "md", action: { type: "message", label: "🙋‍♀️ หญิง (Female)", text: "หญิง" } }
+          { type: "button", style: "primary", color: COLORS.SECONDARY, margin: "xs", action: { type: "message", label: "🙋‍♂️ ชาย (Male)", text: "ชาย" } },
+          { type: "button", style: "primary", color: "#0284C7", margin: "md", action: { type: "message", label: "🙋‍♀️ หญิง (Female)", text: "หญิง" } }
         ]
       }
     }
@@ -526,5 +530,5 @@ async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server runs with Full Flex Messages!');
+  console.log('Server runs with Minimal & Clean UI!');
 });

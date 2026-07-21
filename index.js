@@ -36,7 +36,7 @@ const MENTAL_QUESTIONS = [
   { id: 5, text: "5. ท่านรู้สึกเบื่อหน่ายท้อแท้กับการดำเนินชีวิตประจำวัน" }
 ];
 
-app.get('/', (req, res) => res.send('Health Bot v5 with Global Interceptor is running!'));
+app.get('/', (req, res) => res.send('Health Bot v6 with Resolved Conflict is running!'));
 
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
@@ -89,7 +89,7 @@ async function handleEvent(event) {
   }
 
   // =========================================================================
-  // 🎯 GLOBAL INTERCEPTOR: ตัวดักจับคำสั่งกดเปลี่ยนฟีเจอร์ข้ามโหมด (1-6)
+  // 🎯 GLOBAL INTERCEPTOR (ปรับปรุงใหม่เพื่อแก้ Conflict เมนู 6)
   // =========================================================================
   const isMenuTrigger = ['1', '2', '3', '4', '5', '6'].includes(userMessage) ||
                         userMessage.includes('ลงทะเบียน') ||
@@ -99,9 +99,11 @@ async function handleEvent(event) {
                         userMessage.includes('ค้นหา') ||
                         userMessage.includes('สุขภาพจิต');
 
-  // ถ้าพิมพ์ตัวเลขเมนูเข้ามา หรือคลิกปุ่มริชเมนู ไม่ว่าจะติดอยู่ใน State ไหน ให้หลุดออกมาทำงานตรงนี้ทันที!
-  if (isMenuTrigger && currentState !== 'MAIN_MENU') {
-    // ปรับ State กลับเป็น MAIN_MENU ก่อนแล้วปล่อยให้โค้ดรันเข้าเงื่อนไขเมนูด้านล่าง
+  // 💡 เช็กว่ากำลังตอบข้อสอบสุขภาพจิตด้วยเลข 0-3 หรือเปล่า?
+  const isAnsweringMentalTest = (currentState === 'MONTHLY_MENTAL') && ['0', '1', '2', '3'].includes(userMessage);
+
+  // ถ้าเป็นปุ่มเมนู และ "ไม่ได้กำลังตอบข้อสอบสุขภาพจิต" ให้เด้งไปเมนูใหม่ทันที!
+  if (isMenuTrigger && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
     currentState = 'MAIN_MENU';
     currentContext = {};
   }
@@ -154,7 +156,7 @@ async function handleEvent(event) {
 
     // เมนู 4: แนะนำอาหาร
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
-      await updateState(userId, 'MAIN_MENU', {}); // Reset เสมอ
+      await updateState(userId, 'MAIN_MENU', {});
       const tdee = profile?.tdee || 2000;
       const targetCal = Math.round((tdee - 500) / 3);
       const chronicDisease = profile?.chronic_disease || 'ไม่มี';
@@ -215,7 +217,7 @@ async function handleEvent(event) {
       await updateState(userId, 'SEARCH_NUTRIENT', {});
       let searchIntro = `🔍 [โหมดค้นหาคุณค่าทางโภชนาการเมนูโรงอาหาร]\n\n`;
       searchIntro += `โปรดพิมพ์ชื่อเมนูหรือคำสำคัญที่ต้องการค้นหามาได้เลยครับ (ระบบจะค้นจากคลัง 158+ เมนู)\n\n`;
-      searchIntro += `*(ตัวอย่าง: พิมพ์คำว่า "กะเพรา", "แกง", "ไก่", "หมู" หรือพิมพ์เลขเมนูอื่น 1-6 เพื่อเปลี่ยนโหมดได้ทันทีครับ)*`;
+      searchIntro += `*(ตัวอย่าง: พิมพ์คำว่า "กะเพรา", "แกง", "ไก่", "หมู" หรือพิมพ์เลข 1-6 เพื่อเปลี่ยนโหมดได้ทันทีครับ)*`;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: searchIntro }] });
     }
 
@@ -545,5 +547,5 @@ async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server runs with Global Interceptor!');
+  console.log('Server runs with Resolved Conflict logic!');
 });

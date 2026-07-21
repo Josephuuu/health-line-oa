@@ -23,7 +23,7 @@ const MENTAL_QUESTIONS = [
   { id: 5, text: "5. ท่านรู้สึกเบื่อหน่ายท้อแท้กับการดำเนินชีวิตประจำวัน" }
 ];
 
-app.get('/', (req, res) => res.send('Health Bot v2 is running!'));
+app.get('/', (req, res) => res.send('Health Bot v2 with Flex Message is running!'));
 
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
@@ -40,7 +40,6 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const userMessage = event.message.text.trim();
 
-  // ดึงสถานะปัจจุบันของ User
   let { data: stateData } = await supabase.from('user_states').select('state, context').eq('user_id', userId).single();
   let currentState = stateData ? stateData.state : 'MAIN_MENU';
   let currentContext = stateData && stateData.context ? stateData.context : {};
@@ -50,10 +49,8 @@ async function handleEvent(event) {
     currentState = 'MAIN_MENU';
   }
 
-  // ดึงโปรไฟล์เพื่อเช็กว่าเคยลงทะเบียนหรือยัง
   let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
-  // 🚨 บังคับลงทะเบียนครั้งแรกก่อนใช้ฟีเจอร์อื่น
   if (!profile && currentState === 'MAIN_MENU' && userMessage !== '1' && !userMessage.includes('ลงทะเบียน')) {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
@@ -73,20 +70,18 @@ async function handleEvent(event) {
                        `4️⃣ [แนะนำอาหารลดน้ำหนักโรงอาหาร] (สุ่มคัดสรรเมนูตามแคลอรีเฉพาะบุคคล)\n` +
                        `5️⃣ [ค้นหาโภชนาการเมนูโรงอาหาร] (ค้นหาแคล/คาร์บ/โปรตีน จากคลัง 158+ เมนู)\n` +
                        `6️⃣ [แบบทดสอบสุขภาพจิตรายเดือน] (ทำประเมินสุขภาพจิตและสภาวะอารมณ์)\n\n` +
-                       `👉 พิมพ์หมายเลขเมนู หรือพิมพ์ "เมนูหลัก" เพื่อกลับหน้านี้ได้ตลอดเวลาครับ`;
+                       `👉 พิมพ์หมายเลขเมนู เลือกปุ่มริชเมนู หรือพิมพ์ "เมนูหลัก" ได้ตลอดเวลาครับ`;
 
-  // Global Command
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก' || userMessage === 'เมนู') {
     await updateState(userId, 'MAIN_MENU', {});
     return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: mainMenuText }] });
   }
 
   // ==========================================
-  // 📥 เมนูตัวเลือกเมื่อสแตนด์บายที่หน้า MAIN_MENU
+  // 📥 MAIN MENU
   // ==========================================
   if (currentState === 'MAIN_MENU') {
     
-    // เมนู 1: ลงทะเบียนประวัติสุขภาพ
     if (userMessage === '1' || userMessage.includes('ลงทะเบียน')) {
       await updateState(userId, 'REG_GENDER', {});
       return client.replyMessage({
@@ -99,13 +94,11 @@ async function handleEvent(event) {
       });
     }
 
-    // เมนู 2: อัปเดตน้ำหนักและส่วนสูง
     if (userMessage === '2' || userMessage.includes('อัปเดตน้ำหนัก')) {
       await updateState(userId, 'UPDATE_WEIGHT', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔄 อัปเดตสัดส่วนร่างกายปัจจุบัน\n\nโปรดพิมพ์ น้ำหนัก ของคุณเป็นตัวเลข (กก.) เช่น 65' }] });
     }
 
-    // เมนู 3: บันทึกประจำวัน
     if (userMessage === '3' || userMessage.includes('บันทึกประจำวัน')) {
       await updateState(userId, 'DAILY_MOOD', {});
       return client.replyMessage({
@@ -125,12 +118,11 @@ async function handleEvent(event) {
       });
     }
 
-    // เมนู 4: แนะนำอาหารลดน้ำหนัก
+    // 🌟 เมนู 4: แสดงผลเป็น FLEX MESSAGE สวยงาม!
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
       const tdee = profile?.tdee || 2000;
       const targetCal = Math.round((tdee - 500) / 3);
       const chronicDisease = profile?.chronic_disease || 'ไม่มี';
-      const lifestyle = profile?.lifestyle || 'ทั่วไป';
 
       let { data: fitMenus } = await supabase
         .from('canteen_menus')
@@ -145,29 +137,68 @@ async function handleEvent(event) {
 
       const randomSelected = fitMenus.sort(() => 0.5 - Math.random()).slice(0, 3);
 
-      let foodResponse = `🏪 [เมนูแนะนำเพื่อลดน้ำหนักในโรงอาหารของคุณ]\n`;
-      foodResponse += `📊 เป้าหมายพลังงานมื้อนี้: ไม่ควรเกิน **${targetCal} kcal**\n`;
-      foodResponse += `🩺 โรคประจำตัว: ${chronicDisease} | พฤติกรรม: ${lifestyle}\n`;
-      foodResponse += `-------------------------------------\n\n`;
-      foodResponse += `💡 เมนูคัดสรรแนะนำประจำมื้อนี้:\n`;
+      // สร้างรายการเมนูสไตล์ Flex
+      const menuContents = randomSelected.map((item, idx) => ({
+        type: "box",
+        layout: "horizontal",
+        margin: "md",
+        contents: [
+          { type: "text", text: `${idx + 1}. ${item.menu_name}`, size: "sm", color: "#111111", flex: 4, weight: "bold" },
+          { type: "text", text: `${item.calories} kcal`, size: "sm", color: "#4175DF", align: "end", flex: 2, weight: "bold" }
+        ]
+      }));
 
-      if (randomSelected.length > 0) {
-        randomSelected.forEach((item, idx) => {
-          foodResponse += `${idx + 1}. **${item.menu_name}** (~${item.calories} kcal)\n`;
-        });
-      } else {
-        foodResponse += `• เกาเหลาน้ำใส (~180 kcal)\n• ต้มจืดเต้าหู้หมูสับ (~200 kcal)\n`;
-      }
+      const flexMenuCard = {
+        type: "flex",
+        altText: "🍱 เมนูอาหารคัดสรรแนะนำประจำมื้อนี้",
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box",
+            layout: "vertical",
+            backgroundColor: "#22B573",
+            contents: [
+              { type: "text", text: "🍱 เมนูแนะนำเพื่อสุขภาพ", weight: "bold", size: "lg", color: "#FFFFFF" },
+              { type: "text", text: `เป้าหมายมื้อนี้: ไม่เกิน ${targetCal} kcal`, size: "xs", color: "#E0F7FA", margin: "xs" }
+            ]
+          },
+          body: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              { type: "text", text: `🩺 โรคประจำตัว: ${chronicDisease}`, size: "xs", color: "#666666" },
+              { type: "separator", margin: "md" },
+              { type: "text", text: "💡 เมนูแนะนำคัดสรรจากโรงอาหาร:", size: "xs", color: "#999999", margin: "md" },
+              ...menuContents,
+              { type: "separator", margin: "lg" },
+              { 
+                type: "text", 
+                text: chronicDisease.includes('ความดัน') ? "⚠️ หลีกเลี่ยงน้ำซุปหรือเมนูรสจัด เพื่อลดโซเดียม" : "✨ เลือกทานอาหารให้หลากหลาย และดื่มน้ำตามมากๆ นะครับ", 
+                size: "xs", 
+                color: "#FF5722", 
+                wrap: true, 
+                margin: "md" 
+              }
+            ]
+          },
+          footer: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "button",
+                style: "primary",
+                color: "#22B573",
+                action: { type: "message", label: "🎲 สุ่มเมนูใหม่อีกครั้ง", text: "4" }
+              }
+            ]
+          }
+        }
+      };
 
-      foodResponse += `\n`;
-      if (chronicDisease.includes('ความดัน')) {
-        foodResponse += `⚠️ *คำแนะนำพิเศษ*: หลีกเลี่ยงการซดน้ำซุปหรือเมนูรสจัด เพื่อควบคุมปริมาณโซเดียมนะครับ\n\n`;
-      }
-      foodResponse += `🏠 พิมพ์ "เมนูหลัก" เพื่อกลับไปหน้ารวมฟีเจอร์`;
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: foodResponse }] });
+      return client.replyMessage({ replyToken: event.replyToken, messages: [flexMenuCard] });
     }
 
-    // เมนู 5: ค้นหาคุณค่าทางโภชนาการ
     if (userMessage === '5' || userMessage.includes('ค้นหา')) {
       await updateState(userId, 'SEARCH_NUTRIENT', {});
       let searchIntro = `🔍 [โหมดค้นหาคุณค่าทางโภชนาการเมนูโรงอาหาร]\n\n`;
@@ -176,7 +207,6 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: searchIntro }] });
     }
 
-    // เมนู 6: ประเมินสุขภาพจิตรายเดือน
     if (userMessage === '6' || userMessage.includes('สุขภาพจิต')) {
       currentContext.current_q = 1;
       currentContext.scores = {};
@@ -421,5 +451,5 @@ async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server runs perfectly connected to Supabase Canteen Database!');
+  console.log('Server runs with Flex Message Connected!');
 });

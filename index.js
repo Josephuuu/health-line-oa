@@ -227,8 +227,8 @@ async function handleEvent(event) {
           text: 'พฤติกรรมการใช้ชีวิตประจำวันของคุณเป็นอย่างไร?',
           quickReply: {
             items: [
-              { type: 'action', action: { type: 'message', label: '🖥️ นั่งทำงาน/เรียน เป็นหลัก', text: 'นั่งทำงานทั่วไป' } },
-              { type: 'action', action: { type: 'message', label: '🛠️ ทำงานหนัก/แบกของหนัก', text: 'ทำงานหนักใช้แรง' } },
+              { type: 'action', action: { type: 'message', label: '🖥️ นั่งทำงาน/เรียน', text: 'นั่งทำงานทั่วไป' } },
+              { type: 'action', action: { type: 'message', label: '🛠️ ทำงานหนัก/ใช้แรง', text: 'ทำงานหนักใช้แรง' } },
               { type: 'action', action: { type: 'message', label: '🚬 สูบบุหรี่หรือดื่มสุรา', text: 'สูบบุหรี่หรือดื่ม' } }
             ]
           }
@@ -236,16 +236,34 @@ async function handleEvent(event) {
       });
 
     case 'REG_LIFESTYLE':
+      const validLifestyles = ['นั่งทำงานทั่วไป', 'ทำงานหนักใช้แรง', 'สูบบุหรี่หรือดื่ม'];
+      if (!validLifestyles.includes(userMessage)) {
+        return client.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{
+            type: 'text',
+            text: '⚠️ โปรดเลือกพฤติกรรมจากปุ่มด่วนด้านล่างเท่านั้นครับ:',
+            quickReply: {
+              items: [
+                { type: 'action', action: { type: 'message', label: '🖥️ นั่งทำงาน/เรียน', text: 'นั่งทำงานทั่วไป' } },
+                { type: 'action', action: { type: 'message', label: '🛠️ ทำงานหนัก/ใช้แรง', text: 'ทำงานหนักใช้แรง' } },
+                { type: 'action', action: { type: 'message', label: '🚬 สูบบุหรี่หรือดื่มสุรา', text: 'สูบบุหรี่หรือดื่ม' } }
+              ]
+            }
+          }]
+        });
+      }
+
       currentContext.lifestyle = userMessage;
       await updateState(userId, 'REG_WEIGHT', currentContext);
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'ขอน้ำหนักตัวปัจจุบันของคุณ (กิโลกรัม) ตัวเลขเท่านั้นครับ:' }] });
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'โปรดพิมพ์ น้ำหนัก ของคุณเป็นตัวเลข (กก.) เช่น 65' }] });
 
     case 'REG_WEIGHT':
       const w = parseFloat(userMessage);
       if (isNaN(w) || w <= 0) return replyErr(event, 'โปรดกรอกตัวเลขน้ำหนักที่ถูกต้องครับ');
       currentContext.weight = w;
       await updateState(userId, 'REG_HEIGHT', currentContext);
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'ขอส่วนสูงปัจจุบันของคุณ (เซนติเมตร) ตัวเลขเท่านั้นครับ:' }] });
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'โปรดพิมพ์ ส่วนสูง ของคุณเป็นตัวเลข (ซม.) เช่น 170' }] });
 
     case 'REG_HEIGHT':
       const h = parseFloat(userMessage);
@@ -260,7 +278,7 @@ async function handleEvent(event) {
       if (isNaN(uw) || uw <= 0) return replyErr(event, 'โปรดระบุน้ำหนักเป็นตัวเลขครับ');
       currentContext.weight = uw;
       await updateState(userId, 'UPDATE_HEIGHT', currentContext);
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'โปรดระบุ ส่วนสูง ปัจจุบันของคุณเป็นตัวเลข (ซม.):' }] });
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'โปรดพิมพ์ ส่วนสูง ของคุณเป็นตัวเลข (ซม.) เช่น 170' }] });
 
     case 'UPDATE_HEIGHT':
       const uh = parseFloat(userMessage);
@@ -292,7 +310,6 @@ async function handleEvent(event) {
       dailySummary += `ระบบบันทึกความเปลี่ยนแปลงสุขภาพของคุณไว้ในฐานข้อมูลเรียบร้อยครับ พรุ่งนี้มาเช็กอินใหม่นะ!\n\n` + mainMenuText;
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: dailySummary }] });
 
-    // --- โหมดค้นหาโภชนาการอาหารโรงอาหาร ---
     case 'SEARCH_NUTRIENT':
       const keyword = userMessage.trim();
 

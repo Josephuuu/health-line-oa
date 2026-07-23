@@ -2,6 +2,7 @@ require('dotenv').config({ override: false });
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { createClient } = require('@supabase/supabase-js');
+const cron = require('node-cron');
 
 const config = {
   channelSecret: process.env.LINE_CHANNEL_SECRET,
@@ -34,6 +35,53 @@ const MENTAL_QUESTIONS = [
   { id: 5, text: "5. รู้สึกเบื่อหน่าย หรือท้อแท้กับการใช้ชีวิต" }
 ];
 
+// ==========================================
+// ⏰ DAILY NOTIFICATION SCHEDULER (ระบบแจ้งเตือนภารกิจ)
+// ==========================================
+async function broadcastPushNotification(messageText) {
+  try {
+    const { data: users, error } = await supabase.from('user_profiles').select('user_id');
+    if (error || !users || users.length === 0) return;
+
+    for (const u of users) {
+      try {
+        await client.pushMessage({
+          to: u.user_id,
+          messages: [{ type: 'text', text: messageText }]
+        });
+      } catch (pushErr) {
+        console.error(`Failed to push notification to ${u.user_id}:`, pushErr);
+      }
+    }
+  } catch (err) {
+    console.error('Broadcast Notification Error:', err);
+  }
+}
+
+// 🌅 08:00 น. แจ้งเตือนช่วงเช้า
+cron.schedule('0 8 * * *', () => {
+  console.log('⏰ Trigger: Morning Notification (08:00)');
+  broadcastPushNotification(
+    '🌅 สวัสดีตอนเช้าครับ!\n\nอย่าลืมดื่มน้ำ 1 แก้วเพื่อปลุกร่างกายให้สดชื่นนะครับ 💧\n\n🎯 วันนี้มาพิชิตภารกิจสุขภาพประจำวันกัน! พิมพ์ "ภารกิจ" เพื่อเริ่มบันทึกได้เลยครับ ✨'
+  );
+}, { timezone: "Asia/Bangkok" });
+
+// ☀️ 14:00 น. แจ้งเตือนช่วงบ่าย
+cron.schedule('0 14 * * *', () => {
+  console.log('⏰ Trigger: Afternoon Notification (14:00)');
+  broadcastPushNotification(
+    '☀️ พักสายตาและยืดเส้นยืดสายกันหน่อยครับ! 🧘‍♂️\n\nนั่งเรียน/ทำงานนานๆ อาจเมื่อยล้าได้ ขยับร่างกายสัก 1-2 นาที และอย่าลืมจิบน้ำเติมพลังด้วยนะครับ 💧'
+  );
+}, { timezone: "Asia/Bangkok" });
+
+// 🌆 20:00 น. แจ้งเตือนช่วงค่ำ
+cron.schedule('0 20 * * *', () => {
+  console.log('⏰ Trigger: Evening Notification (20:00)');
+  broadcastPushNotification(
+    '🌆 โค้งสุดท้ายของวันแล้วครับ! 🎯\n\nวันนี้คุณดื่มน้ำ เดินก้าวสะสม หรือยืดตัวครบเป้าหมายหรือยังครับ? พิมพ์ "ภารกิจ" เพื่อเช็กอินและสรุปผลประจำวันได้เลยครับ ✨'
+  );
+}, { timezone: "Asia/Bangkok" });
+
 app.get('/', (req, res) => res.send('Health Bot status: Active!'));
 
 app.post('/webhook', line.middleware(config), (req, res) => {
@@ -62,7 +110,7 @@ async function handleEvent(event) {
 
   let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
-  // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง (สำหรับ Admin / Dev ทดสอบ)
+  // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง
   const isRegTrigger = userMessage.includes('ลงทะเบียนประวัติสุขภาพ') || userMessage === 'ลงทะเบียน';
 
   if (isRegTrigger) {
@@ -73,7 +121,7 @@ async function handleEvent(event) {
     });
   }
 
-  // 🚨 บังคับลงทะเบียนอัตโนมัติเฉพาะ User ใหม่ที่เข้ามาครั้งแรก
+  // 🚨 บังคับลงทะเบียนอัตโนมัติเฉพาะ User ใหม่
   if (!profile && currentState === 'MAIN_MENU') {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
@@ -151,7 +199,7 @@ async function handleEvent(event) {
           body: {
             type: "box", layout: "vertical",
             contents: [
-              // 💧 ดื่มน้ำ (+250 / +500)
+              // 💧 ดื่มน้ำ
               { type: "text", text: `💧 ดื่มน้ำ: ${missionLog.water_accum_ml} / ${targetWater} ml (${waterPct}%)`, size: "xs", color: COLORS.ACCENT, weight: "bold" },
               {
                 type: "box", layout: "horizontal", margin: "xs",
@@ -282,7 +330,7 @@ async function handleEvent(event) {
       
       if (userMessage === 'อัปเดตน้ำหนักส่วนสูง') {
         await updateState(userId, 'UPDATE_WEIGHT', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚖️ มาอัปเดตน้ำหนักประจำสัปดาห์กันครับ! ตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
+        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '秤️ มาอัปเดตน้ำหนักประจำสัปดาห์กันครับ! ตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
       }
 
       if (userMessage === 'ระบุปริมาณน้ำ') {
@@ -323,7 +371,6 @@ async function handleEvent(event) {
       }
       break;
 
-    // สถานะอัปเดตสัดส่วน (รอบ 7 วัน)
     case 'UPDATE_WEIGHT':
       const newW = parseFloat(userMessage);
       if (isNaN(newW) || newW <= 0) return replyErr(event, 'โปรดระบุน้ำหนักเป็นตัวเลขครับ');
@@ -512,7 +559,7 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกเรียบร้อยครับ ✨\n\n` + mainMenuText }] });
 
-    // 🔍 ค้นหาโภชนาการ (แก้ไข justifyContent: "center" เรียบร้อยแล้ว)
+    // 🔍 ค้นหาโภชนาการ (ปรับแก้ไม่ให้เด้งหลุดไปหน้าหลักเมื่อพิมพ์คำผิด/ไม่พบเมนู)
     case 'SEARCH_NUTRIENT':
       try {
         let searchKey = userMessage.trim();
@@ -532,8 +579,10 @@ async function handleEvent(event) {
 
         if (error) {
           console.error('Supabase Search Error:', error);
-          await updateState(userId, 'MAIN_MENU', {});
-          return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `ไม่พบเมนูที่ค้นหา ลองค้นด้วยคำสั้นๆ ดูนะครับ\n\n` + mainMenuText }] });
+          return client.replyMessage({ 
+            replyToken: event.replyToken, 
+            messages: [{ type: 'text', text: `❌ เกิดข้อผิดพลาดในการค้นหา ลองพิมพ์ค้นชื่อเมนูใหม่อีกครั้งได้เลยครับ\n(หรือพิมพ์ "เมนูหลัก" เพื่อยกเลิก)` }] 
+          });
         }
 
         if (matchedMenus && matchedMenus.length > 0) {
@@ -571,7 +620,7 @@ async function handleEvent(event) {
             bubbles.push({
               type: "bubble",
               body: {
-                type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", // Fixed here!
+                type: "box", layout: "vertical", justifyContent: "center", alignItems: "center",
                 contents: [
                   { type: "text", text: `ยังมีเมนู "${searchKey}" อีก ${totalCount - nextOffset} เมนู`, size: "xs", color: "#6B7280", wrap: true },
                   { 
@@ -593,13 +642,18 @@ async function handleEvent(event) {
             }] 
           });
         } else {
-          await updateState(userId, 'MAIN_MENU', {});
-          return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `ไม่พบเมนูที่ค้นหา ลองค้นด้วยคำสั้นๆ ดูนะครับ\n\n` + mainMenuText }] });
+          // 💡 คงสถานะ SEARCH_NUTRIENT ไว้ ผู้ใช้จะได้พิมพ์ค้นใหม่ได้เลยทันที
+          return client.replyMessage({ 
+            replyToken: event.replyToken, 
+            messages: [{ type: 'text', text: `❌ ไม่พบเมนูที่ชื่อ "${searchKey}" ครับ\n\n🔍 ลองพิมพ์ค้นหาด้วยคำสั้นๆ หรือชื่อเมนูอื่นได้เลยครับ!\n(หรือพิมพ์ "เมนูหลัก" เพื่อกลับหน้าหลัก)` }] 
+          });
         }
       } catch (err) {
         console.error('SEARCH_NUTRIENT Error:', err);
-        await updateState(userId, 'MAIN_MENU', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚠️ ไม่พบข้อมูลเมนูที่ค้นหาครับ ลองค้นด้วยคำอื่นดูนะครับ\n\n' + mainMenuText }] });
+        return client.replyMessage({ 
+          replyToken: event.replyToken, 
+          messages: [{ type: 'text', text: '⚠️ เกิดข้อผิดพลาด ลองพิมพ์ค้นชื่อเมนูใหม่อีกครั้งนะครับ\n(หรือพิมพ์ "เมนูหลัก" เพื่อกลับหน้าหลัก)' }] 
+        });
       }
 
     // แบบทดสอบสุขภาพจิต
@@ -755,5 +809,5 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server running with fixed Flex Message schema (justifyContent)!');
+  console.log('Server running with persistent search state & daily cron notifications!');
 });

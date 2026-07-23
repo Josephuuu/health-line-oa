@@ -36,7 +36,7 @@ const MENTAL_QUESTIONS = [
   { id: 5, text: "5. ท่านรู้สึกเบื่อหน่ายท้อแท้กับการดำเนินชีวิตประจำวัน" }
 ];
 
-app.get('/', (req, res) => res.send('Health Bot v6 with Resolved Conflict is running!'));
+app.get('/', (req, res) => res.send('Health Bot v7 with Dietary Restrictions is running!'));
 
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
@@ -74,7 +74,7 @@ async function handleEvent(event) {
   }
 
   const mainMenuText = `🤖 เมนูหลักระบบดูแลสุขภาพและโภชนาการ:\n\n` +
-                       `1️⃣ [ลงทะเบียนประวัติสุขภาพ] (แก้ไขข้อมูลเริ่มต้น)\n` +
+                       `1️⃣ [ลงทะเบียนประวัติสุขภาพ] (แก้ไขข้อมูลเริ่มต้น/ข้อจำกัดอาหาร)\n` +
                        `2️⃣ [อัปเดตน้ำหนัก/ส่วนสูง] (ปรับสัดส่วนปัจจุบันเพื่อคำนวณ BMI ใหม่)\n` +
                        `3️⃣ [บันทึกสุขภาพรายวัน] (เช็กอินความรู้สึกและอาการป่วยวันต่อวัน)\n` +
                        `4️⃣ [แนะนำอาหารลดน้ำหนักโรงอาหาร] (สุ่มคัดสรรเมนูตามแคลอรีเฉพาะบุคคล)\n` +
@@ -89,7 +89,7 @@ async function handleEvent(event) {
   }
 
   // =========================================================================
-  // 🎯 GLOBAL INTERCEPTOR (ปรับปรุงใหม่เพื่อแก้ Conflict เมนู 6)
+  // 🎯 GLOBAL INTERCEPTOR (ตัวดักจับเปลี่ยนฟีเจอร์)
   // =========================================================================
   const isMenuTrigger = ['1', '2', '3', '4', '5', '6'].includes(userMessage) ||
                         userMessage.includes('ลงทะเบียน') ||
@@ -99,10 +99,8 @@ async function handleEvent(event) {
                         userMessage.includes('ค้นหา') ||
                         userMessage.includes('สุขภาพจิต');
 
-  // 💡 เช็กว่ากำลังตอบข้อสอบสุขภาพจิตด้วยเลข 0-3 หรือเปล่า?
   const isAnsweringMentalTest = (currentState === 'MONTHLY_MENTAL') && ['0', '1', '2', '3'].includes(userMessage);
 
-  // ถ้าเป็นปุ่มเมนู และ "ไม่ได้กำลังตอบข้อสอบสุขภาพจิต" ให้เด้งไปเมนูใหม่ทันที!
   if (isMenuTrigger && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
     currentState = 'MAIN_MENU';
     currentContext = {};
@@ -154,17 +152,55 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [moodCard] });
     }
 
-    // เมนู 4: แนะนำอาหาร
+    // เมนู 4: แนะนำอาหาร (พร้อมระบบกรองแพ้อาหาร/ศาสนา)
     if (userMessage === '4' || userMessage.includes('แนะนำอาหาร')) {
       await updateState(userId, 'MAIN_MENU', {});
       const tdee = profile?.tdee || 2000;
       const targetCal = Math.round((tdee - 500) / 3);
       const chronicDisease = profile?.chronic_disease || 'ไม่มี';
+      const dietary = profile?.dietary_restriction || 'ไม่มี';
 
-      let { data: fitMenus } = await supabase.from('canteen_menus').select('*').lte('calories', targetCal).limit(30);
-      if (!fitMenus || fitMenus.length === 0) {
-        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(10);
-        fitMenus = fallback || [];
+      let { data: allMenus } = await supabase.from('canteen_menus').select('*').lte('calories', targetCal);
+      
+      if (!allMenus || allMenus.length === 0) {
+        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(50);
+        allMenus = fallback || [];
+      }
+
+      // 🛡️ Filter Logic: กรองเมนูตามข้อจำกัดทางอาหารของผู้ใช้
+      let fitMenus = allMenus.filter(item => {
+        const name = item.menu_name || '';
+
+        // Case 1: อิสลาม / ฮาลาล -> ห้ามมี หมู, เบคอน, กุนเชียง, ตับหมู, หมูกรอบ
+        if (dietary.includes('อิสลาม') || dietary.includes('ฮาลาล')) {
+          const porkKeywords = ['หมู', 'เบคอน', 'กุนเชียง', 'ตับหมู', 'หมูกรอบ', 'แคปหมู'];
+          if (porkKeywords.some(kw => name.includes(kw))) return false;
+        }
+
+        // Case 2: มังสวิรัติ / วีแกน -> ห้ามมีเนื้อสัตว์ทุกชนิด
+        if (dietary.includes('มังสวิรัติ') || dietary.includes('วีแกน') || dietary.includes('เจ')) {
+          const meatKeywords = ['หมู', 'ไก่', 'เนื้อ', 'กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'เป็ด', 'ไข่', 'ตับ'];
+          if (meatKeywords.some(kw => name.includes(kw))) return false;
+        }
+
+        // Case 3: แพ้อาหารทะเล -> ห้ามมี กุ้ง, หมึก, ปลา, ปู, หอย, ทะเล
+        if (dietary.includes('ทะเล')) {
+          const seafoodKeywords = ['กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'ทะเล', 'กะปิ'];
+          if (seafoodKeywords.some(kw => name.includes(kw))) return false;
+        }
+
+        // Case 4: แพ้ถั่ว / นม
+        if (dietary.includes('ถั่ว') || dietary.includes('นม')) {
+          const nutKeywords = ['ถั่ว', 'พะแนง', 'มัสมั่น', 'นม', 'ชีส', 'เนย'];
+          if (nutKeywords.some(kw => name.includes(kw))) return false;
+        }
+
+        return true;
+      });
+
+      // ถ้ากรองแล้วไม่เหลือเมนูเลย ให้ใช้เมนูสำรองที่ปลอดภัย
+      if (fitMenus.length === 0) {
+        fitMenus = allMenus;
       }
 
       const randomSelected = fitMenus.sort(() => 0.5 - Math.random()).slice(0, 3);
@@ -194,8 +230,9 @@ async function handleEvent(event) {
             type: "box", layout: "vertical",
             contents: [
               { type: "text", text: `🩺 โรคประจำตัว: ${chronicDisease}`, size: "xs", color: "#6B7280" },
+              { type: "text", text: `🥗 ข้อจำกัดอาหาร: ${dietary}`, size: "xs", color: COLORS.PRIMARY, weight: "bold", margin: "xs" },
               { type: "separator", margin: "md" },
-              { type: "text", text: "💡 เมนูแนะนำคัดสรรจากโรงอาหาร:", size: "xs", color: "#9CA3AF", margin: "md" },
+              { type: "text", text: "💡 เมนูแนะนำคัดสรรอย่างปลอดภัย:", size: "xs", color: "#9CA3AF", margin: "md" },
               ...menuContents,
               { type: "separator", margin: "lg" },
               { type: "text", text: chronicDisease.includes('ความดัน') ? "⚠️ หลีกเลี่ยงน้ำซุปหรือเมนูรสจัด เพื่อลดโซเดียม" : "✨ เลือกทานอาหารให้หลากหลาย และดื่มน้ำตามมากๆ นะครับ", size: "xs", color: COLORS.WARNING, wrap: true, margin: "md" }
@@ -254,7 +291,7 @@ async function handleEvent(event) {
           header: {
             type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🩺 ประวัติสุขภาพ (3/5)", color: "#CCFBF1", weight: "bold", size: "xs" },
+              { type: "text", text: "🩺 ประวัติสุขภาพ (3/6)", color: "#CCFBF1", weight: "bold", size: "xs" },
               { type: "text", text: "คุณมีโรคประจำตัวหรือไม่ครับ?", color: COLORS.WHITE, weight: "bold", size: "md", margin: "xs" }
             ]
           },
@@ -273,6 +310,37 @@ async function handleEvent(event) {
 
     case 'REG_DISEASE':
       currentContext.chronic_disease = userMessage;
+      await updateState(userId, 'REG_DIET', currentContext);
+
+      // 🥗 การ์ดลงทะเบียนการแพ้อาหาร / ข้อจำกัดทางศาสนา
+      const dietCard = {
+        type: "flex",
+        altText: "โปรดเลือกข้อจำกัดทางอาหารและการแพ้อาหาร",
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
+            contents: [
+              { type: "text", text: "🥗 ข้อจำกัดทางอาหาร (4/6)", color: "#CCFBF1", weight: "bold", size: "xs" },
+              { type: "text", text: "คุณมีข้อจำกัดหรือแพ้อาหารไหมครับ?", color: COLORS.WHITE, weight: "bold", size: "sm", margin: "xs" }
+            ]
+          },
+          body: {
+            type: "box", layout: "vertical",
+            contents: [
+              { type: "button", style: "primary", color: COLORS.SECONDARY, margin: "xs", action: { type: "message", label: "❌ ไม่มี (ทานได้หมด)", text: "ไม่มี" } },
+              { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🌙 อิสลาม / ฮาลาล", text: "อิสลาม/ฮาลาล" } },
+              { type: "button", style: "primary", color: "#10B981", margin: "sm", action: { type: "message", label: "🌱 มังสวิรัติ / วีแกน / เจ", text: "มังสวิรัติ/วีแกน" } },
+              { type: "button", style: "primary", color: "#D97706", margin: "sm", action: { type: "message", label: "🦐 แพ้อาหารทะเล", text: "แพ้อาหารทะเล" } },
+              { type: "button", style: "primary", color: "#DC2626", margin: "sm", action: { type: "message", label: "🥜 แพ้ถั่ว / นม / ไข่", text: "แพ้ถั่ว/นม" } }
+            ]
+          }
+        }
+      };
+      return client.replyMessage({ replyToken: event.replyToken, messages: [dietCard] });
+
+    case 'REG_DIET':
+      currentContext.dietary_restriction = userMessage;
       await updateState(userId, 'REG_LIFESTYLE', currentContext);
 
       const lifestyleCard = {
@@ -283,7 +351,7 @@ async function handleEvent(event) {
           header: {
             type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🏃‍♂️ พฤติกรรมประจำวัน (4/5)", color: "#CCFBF1", weight: "bold", size: "xs" },
+              { type: "text", text: "🏃‍♂️ พฤติกรรมประจำวัน (5/6)", color: "#CCFBF1", weight: "bold", size: "xs" },
               { type: "text", text: "พฤติกรรมการใช้ชีวิตของคุณเป็นอย่างไร?", color: COLORS.WHITE, weight: "bold", size: "sm", margin: "xs" }
             ]
           },
@@ -320,7 +388,16 @@ async function handleEvent(event) {
       const h = parseFloat(userMessage);
       if (isNaN(h) || h <= 0) return replyErr(event, 'โปรดกรอกตัวเลขส่วนสูงที่ถูกต้องครับ');
       
-      await saveUserProfile(userId, currentContext.gender, currentContext.age, currentContext.chronic_disease, currentContext.lifestyle, currentContext.weight, h);
+      await saveUserProfile(
+        userId, 
+        currentContext.gender, 
+        currentContext.age, 
+        currentContext.chronic_disease, 
+        currentContext.dietary_restriction || 'ไม่มี', 
+        currentContext.lifestyle, 
+        currentContext.weight, 
+        h
+      );
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🎉 ลงทะเบียนประวัติสุขภาพเสร็จสมบูรณ์เรียบร้อยครับ!\n\n' + mainMenuText }] });
 
@@ -336,9 +413,9 @@ async function handleEvent(event) {
       if (isNaN(uh) || uh <= 0) return replyErr(event, 'โปรดระบุส่วนสูงเป็นตัวเลขครับ');
       
       if (profile) {
-        await saveUserProfile(userId, profile.gender, profile.age, profile.chronic_disease, profile.lifestyle, currentContext.weight, uh);
+        await saveUserProfile(userId, profile.gender, profile.age, profile.chronic_disease, profile.dietary_restriction || 'ไม่มี', profile.lifestyle, currentContext.weight, uh);
       } else {
-        await saveUserProfile(userId, 'ไม่ระบุ', 0, 'ไม่มี', 'ทั่วไป', currentContext.weight, uh);
+        await saveUserProfile(userId, 'ไม่ระบุ', 0, 'ไม่มี', 'ไม่มี', 'ทั่วไป', currentContext.weight, uh);
       }
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💪 อัปเดตสัดส่วนสรีระร่างกายและดัชนีพลังงานใหม่เรียบร้อยครับ!\n\n' + mainMenuText }] });
@@ -492,7 +569,7 @@ function getGenderFlexCard(title) {
       header: {
         type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
         contents: [
-          { type: "text", text: "👤 ลงทะเบียนประวัติ (1/5)", color: "#CCFBF1", weight: "bold", size: "xs" },
+          { type: "text", text: "👤 ลงทะเบียนประวัติ (1/6)", color: "#CCFBF1", weight: "bold", size: "xs" },
           { type: "text", text: title, color: COLORS.WHITE, weight: "bold", size: "sm", margin: "xs", wrap: true }
         ]
       },
@@ -534,7 +611,7 @@ function replyErr(event, msg) {
   return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚠️ ' + msg }] });
 }
 
-async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, weight, height) {
+async function saveUserProfile(userId, gender, age, chronic_disease, dietary_restriction, lifestyle, weight, height) {
   const heightMeter = height / 100;
   const bmi = parseFloat((weight / (heightMeter * heightMeter)).toFixed(1));
   let bmr = (gender === 'ชาย') ? (10 * weight + 6.25 * height - 5 * age + 5) : (10 * weight + 6.25 * height - 5 * age - 161);
@@ -542,10 +619,10 @@ async function saveUserProfile(userId, gender, age, chronic_disease, lifestyle, 
   const tdee = Math.round(bmr * 1.375);
 
   await supabase.from('user_profiles').upsert({
-    user_id: userId, gender, age, chronic_disease, lifestyle, weight, height, bmi, bmr, tdee
+    user_id: userId, gender, age, chronic_disease, dietary_restriction, lifestyle, weight, height, bmi, bmr, tdee
   }, { onConflict: 'user_id' });
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server runs with Resolved Conflict logic!');
+  console.log('Server runs with Dietary Filter System!');
 });

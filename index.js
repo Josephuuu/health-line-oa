@@ -82,7 +82,6 @@ async function handleEvent(event) {
     });
   }
 
-  // 📌 เรียงลำดับเมนูใหม่ตามที่คุณต้องการ (1 -> 4)
   const mainMenuText = `📌 เมนูหลักระบบดูแลสุขภาพ:\n\n` +
                        `1️⃣ [คำนวณแคลอรี่และโภชนาการ]\n` +
                        `2️⃣ [ภารกิจสุขภาพประจำวัน]\n` +
@@ -109,7 +108,7 @@ async function handleEvent(event) {
   }
 
   // ==========================================
-  // 📥 MAIN MENU ROUTING (เรียงลำดับ 1 - 4)
+  // 📥 MAIN MENU ROUTING
   // ==========================================
   if (currentState === 'MAIN_MENU') {
     
@@ -119,7 +118,7 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารในโรงเรียนที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
     }
 
-    // 2️⃣ ฟีเจอร์ 2: ภารกิจสุขภาพประจำวัน + บันทึกประจำวัน
+    // 2️⃣ ฟีเจอร์ 2: ภารกิจสุขภาพประจำวัน
     if (isMissionTrigger) {
       const todayStr = new Date().toISOString().split('T')[0];
       let { data: missionLog } = await supabase.from('daily_missions').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
@@ -152,18 +151,18 @@ async function handleEvent(event) {
           body: {
             type: "box", layout: "vertical",
             contents: [
-              // 💧 ดื่มน้ำ
+              // 💧 ดื่มน้ำ (+250 / +500)
               { type: "text", text: `💧 ดื่มน้ำ: ${missionLog.water_accum_ml} / ${targetWater} ml (${waterPct}%)`, size: "xs", color: COLORS.ACCENT, weight: "bold" },
               {
                 type: "box", layout: "horizontal", margin: "xs",
                 contents: [
-                  { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "+250ml", text: "บันทึกน้ำ 250" } },
-                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "+500ml", text: "บันทึกน้ำ 500" } },
-                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "ระบุเอง", text: "ระบุปริมาณน้ำ" } }
+                  { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "+250", text: "บันทึกน้ำ 250" } },
+                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "+500", text: "บันทึกน้ำ 500" } },
+                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "ระบุ", text: "ระบุปริมาณน้ำ" } }
                 ]
               },
 
-              // 🧘‍♂️ ยืดเส้นยืดสาย (ปรับแก้ไขความยาวปุ่ม ให้ไม่ถูกตัดคำว่า "ครบ...")
+              // 🧘‍♂️ ยืดเส้นยืดสาย
               { type: "text", text: `🧘‍♂️ ยืดตัว: ${missionLog.stretch_count} / 3-5 ครั้ง`, size: "xs", color: COLORS.SECONDARY, margin: "md", weight: "bold" },
               {
                 type: "box", layout: "horizontal", margin: "xs",
@@ -383,7 +382,6 @@ async function handleEvent(event) {
 
       if (age >= 12 && age <= 18) {
         await updateState(userId, 'REG_STUDENT_LEVEL', currentContext);
-        // ปรับแก้ชื่อปุ่ม มัธยมศึกษาตอนต้น / มัธยมศึกษาตอนปลาย ตัดวงเล็บออกเพื่อไม่ให้ตกขอบ
         const levelCard = {
           type: "flex", altText: "โปรดเลือกระดับชั้นเรียน",
           contents: {
@@ -453,7 +451,6 @@ async function handleEvent(event) {
       currentContext.dietary_restriction = userMessage;
       await updateState(userId, 'REG_LIFESTYLE', currentContext);
       
-      // ปรับย่อข้อความปุ่ม พฤติกรรมและวิถีชีวิต ไม่ให้ยาวจนตกขอบ
       const lifestyleCard = {
         type: "flex", altText: "โปรดเลือกพฤติกรรมการใช้ชีวิต",
         contents: {
@@ -515,65 +512,94 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกเรียบร้อยครับ ✨\n\n` + mainMenuText }] });
 
-    // ค้นหาโภชนาการ
+    // 🔍 ค้นหาโภชนาการ (แก้ไข justifyContent: "center" เรียบร้อยแล้ว)
     case 'SEARCH_NUTRIENT':
-      let searchKey = userMessage.trim();
-      let currentOffset = currentContext.offset || 0;
+      try {
+        let searchKey = userMessage.trim();
+        let currentOffset = currentContext.offset || 0;
 
-      if (userMessage.startsWith('ค้นหาเพิ่ม:')) {
-        const parts = userMessage.split(':');
-        searchKey = parts[1];
-        currentOffset = parseInt(parts[2]) || 0;
-      }
-
-      let { data: matchedMenus, count } = await supabase
-        .from('canteen_menus')
-        .select('*', { count: 'exact' })
-        .ilike('menu_name', `%${searchKey}%`)
-        .range(currentOffset, currentOffset + 1);
-
-      if (matchedMenus && matchedMenus.length > 0) {
-        const bubbles = matchedMenus.map((meal) => ({
-          type: "bubble",
-          header: {
-            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
-            contents: [
-              { type: "text", text: meal.menu_name, weight: "bold", size: "md", color: COLORS.WHITE, wrap: true },
-              { type: "text", text: `🔥 พลังงาน: ${meal.calories || '-'} kcal`, size: "xs", color: "#CCFBF1", margin: "xs" }
-            ]
-          },
-          body: {
-            type: "box", layout: "vertical",
-            contents: [
-              { type: "text", text: `🍞 คาร์โบไฮเดรต: ${meal.carbs || '-'} g`, size: "xs", color: "#4B5563" },
-              { type: "text", text: `🥩 โปรตีน: ${meal.protein || '-'} g`, size: "xs", color: "#4B5563", margin: "xs" },
-              { type: "text", text: `🥑 ไขมัน: ${meal.fat || '-'} g`, size: "xs", color: "#4B5563", margin: "xs" }
-            ]
-          }
-        }));
-
-        const nextOffset = currentOffset + 2;
-        if (count > nextOffset) {
-          bubbles.push({
-            type: "bubble",
-            body: {
-              type: "box", layout: "vertical", justifyContents: "center", alignItems: "center",
-              contents: [
-                { type: "text", text: `ยังมีเมนู "${searchKey}" อีก ${count - nextOffset} เมนู`, size: "xs", color: "#6B7280", wrap: true },
-                { 
-                  type: "button", style: "primary", color: COLORS.SECONDARY, margin: "md",
-                  action: { type: "message", label: "🔍 ดูเมนูอื่นเพิ่มเติม", text: `ค้นหาเพิ่ม:${searchKey}:${nextOffset}` } 
-                }
-              ]
-            }
-          });
+        if (userMessage.startsWith('ค้นหาเพิ่ม:')) {
+          const parts = userMessage.split(':');
+          searchKey = parts[1] || '';
+          currentOffset = parseInt(parts[2]) || 0;
         }
 
-        await updateState(userId, 'SEARCH_NUTRIENT', { offset: currentOffset, key: searchKey });
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: "flex", altText: `ผลการค้นหา ${searchKey}`, contents: { type: "carousel", contents: bubbles } }] });
-      } else {
+        let { data: matchedMenus, count, error } = await supabase
+          .from('canteen_menus')
+          .select('*', { count: 'exact' })
+          .ilike('menu_name', `%${searchKey}%`)
+          .range(currentOffset, currentOffset + 2);
+
+        if (error) {
+          console.error('Supabase Search Error:', error);
+          await updateState(userId, 'MAIN_MENU', {});
+          return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `ไม่พบเมนูที่ค้นหา ลองค้นด้วยคำสั้นๆ ดูนะครับ\n\n` + mainMenuText }] });
+        }
+
+        if (matchedMenus && matchedMenus.length > 0) {
+          const bubbles = matchedMenus.map((meal) => {
+            const menuName = String(meal.menu_name || 'เมนูอาหาร');
+            const cal = String(meal.calories ?? '-');
+            const carbs = String(meal.carbs ?? '-');
+            const protein = String(meal.protein ?? '-');
+            const fat = String(meal.fat ?? '-');
+
+            return {
+              type: "bubble",
+              header: {
+                type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
+                contents: [
+                  { type: "text", text: menuName, weight: "bold", size: "md", color: COLORS.WHITE, wrap: true },
+                  { type: "text", text: `🔥 พลังงาน: ${cal} kcal`, size: "xs", color: "#CCFBF1", margin: "xs" }
+                ]
+              },
+              body: {
+                type: "box", layout: "vertical",
+                contents: [
+                  { type: "text", text: `🍞 คาร์โบไฮเดรต: ${carbs} g`, size: "xs", color: "#4B5563" },
+                  { type: "text", text: `🥩 โปรตีน: ${protein} g`, size: "xs", color: "#4B5563", margin: "xs" },
+                  { type: "text", text: `🥑 ไขมัน: ${fat} g`, size: "xs", color: "#4B5563", margin: "xs" }
+                ]
+              }
+            };
+          });
+
+          const nextOffset = currentOffset + matchedMenus.length;
+          const totalCount = count || 0;
+
+          if (totalCount > nextOffset) {
+            bubbles.push({
+              type: "bubble",
+              body: {
+                type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", // Fixed here!
+                contents: [
+                  { type: "text", text: `ยังมีเมนู "${searchKey}" อีก ${totalCount - nextOffset} เมนู`, size: "xs", color: "#6B7280", wrap: true },
+                  { 
+                    type: "button", style: "primary", color: COLORS.SECONDARY, margin: "md",
+                    action: { type: "message", label: "🔍 ดูเมนูอื่นเพิ่มเติม", text: `ค้นหาเพิ่ม:${searchKey}:${nextOffset}` } 
+                  }
+                ]
+              }
+            });
+          }
+
+          await updateState(userId, 'SEARCH_NUTRIENT', { offset: currentOffset, key: searchKey });
+          return client.replyMessage({ 
+            replyToken: event.replyToken, 
+            messages: [{ 
+              type: "flex", 
+              altText: `ผลการค้นหา ${searchKey}`, 
+              contents: { type: "carousel", contents: bubbles } 
+            }] 
+          });
+        } else {
+          await updateState(userId, 'MAIN_MENU', {});
+          return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `ไม่พบเมนูที่ค้นหา ลองค้นด้วยคำสั้นๆ ดูนะครับ\n\n` + mainMenuText }] });
+        }
+      } catch (err) {
+        console.error('SEARCH_NUTRIENT Error:', err);
         await updateState(userId, 'MAIN_MENU', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `ไม่พบเมนูที่ค้นหา ลองค้นด้วยคำสั้นๆ ดูนะครับ\n\n` + mainMenuText }] });
+        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚠️ ไม่พบข้อมูลเมนูที่ค้นหาครับ ลองค้นด้วยคำอื่นดูนะครับ\n\n' + mainMenuText }] });
       }
 
     // แบบทดสอบสุขภาพจิต
@@ -729,5 +755,5 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server running with updated feature order and compact Flex buttons!');
+  console.log('Server running with fixed Flex Message schema (justifyContent)!');
 });

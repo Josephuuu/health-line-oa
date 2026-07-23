@@ -36,23 +36,22 @@ const MENTAL_QUESTIONS = [
 ];
 
 // ==========================================
-// ⏰ DAILY NOTIFICATION SCHEDULER (ระบบแจ้งเตือนภารกิจ)
+// ⏰ DAILY NOTIFICATION SCHEDULER (ระบบแจ้งเตือนภารกิจ - ปรับปรุงความเร็ว)
 // ==========================================
 async function broadcastPushNotification(messageText) {
   try {
     const { data: users, error } = await supabase.from('user_profiles').select('user_id');
     if (error || !users || users.length === 0) return;
 
-    for (const u of users) {
-      try {
-        await client.pushMessage({
-          to: u.user_id,
-          messages: [{ type: 'text', text: messageText }]
-        });
-      } catch (pushErr) {
-        console.error(`Failed to push notification to ${u.user_id}:`, pushErr);
-      }
-    }
+    // ⚡ ปรับปรุง: ยิง Push Message พร้อมกันทุกเครื่อง ไม่บล็อก Server
+    const pushPromises = users.map(u => 
+      client.pushMessage({
+        to: u.user_id,
+        messages: [{ type: 'text', text: messageText }]
+      }).catch(err => console.error(`Failed push to ${u.user_id}:`, err))
+    );
+
+    await Promise.allSettled(pushPromises);
   } catch (err) {
     console.error('Broadcast Notification Error:', err);
   }
@@ -99,7 +98,15 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const userMessage = event.message.text.trim();
 
-  let { data: stateData } = await supabase.from('user_states').select('state, context').eq('user_id', userId).single();
+  // ⚡ ปรับปรุง: ดึง user_states และ user_profiles พร้อมกันในคราวเดียว (Parallel Query)
+  const [stateRes, profileRes] = await Promise.all([
+    supabase.from('user_states').select('state, context').eq('user_id', userId).single(),
+    supabase.from('user_profiles').select('*').eq('user_id', userId).single()
+  ]);
+
+  let stateData = stateRes.data;
+  let profile = profileRes.data;
+
   let currentState = stateData ? stateData.state : 'MAIN_MENU';
   let currentContext = stateData && stateData.context ? stateData.context : {};
 
@@ -107,8 +114,6 @@ async function handleEvent(event) {
     await supabase.from('user_states').insert({ user_id: userId, state: 'MAIN_MENU', context: {} });
     currentState = 'MAIN_MENU';
   }
-
-  let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
   // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง
   const isRegTrigger = userMessage.includes('ลงทะเบียนประวัติสุขภาพ') || userMessage === 'ลงทะเบียน';
@@ -330,7 +335,7 @@ async function handleEvent(event) {
       
       if (userMessage === 'อัปเดตน้ำหนักส่วนสูง') {
         await updateState(userId, 'UPDATE_WEIGHT', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '秤️ มาอัปเดตน้ำหนักประจำสัปดาห์กันครับ! ตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
+        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚖️ มาอัปเดตน้ำหนักประจำสัปดาห์กันครับ! ตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
       }
 
       if (userMessage === 'ระบุปริมาณน้ำ') {
@@ -559,7 +564,7 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกเรียบร้อยครับ ✨\n\n` + mainMenuText }] });
 
-    // 🔍 ค้นหาโภชนาการ (ปรับแก้ไม่ให้เด้งหลุดไปหน้าหลักเมื่อพิมพ์คำผิด/ไม่พบเมนู)
+    // 🔍 ค้นหาโภชนาการ (ไม่เด้งหลุดไปหน้าหลักเมื่อพิมพ์คำผิด/ไม่พบเมนู)
     case 'SEARCH_NUTRIENT':
       try {
         let searchKey = userMessage.trim();
@@ -642,7 +647,7 @@ async function handleEvent(event) {
             }] 
           });
         } else {
-          // 💡 คงสถานะ SEARCH_NUTRIENT ไว้ ผู้ใช้จะได้พิมพ์ค้นใหม่ได้เลยทันที
+          // 💡 คงสถานะ SEARCH_NUTRIENT ไว้ ผู้ใช้พิมพ์ค้นใหม่ได้เลยทันที
           return client.replyMessage({ 
             replyToken: event.replyToken, 
             messages: [{ type: 'text', text: `❌ ไม่พบเมนูที่ชื่อ "${searchKey}" ครับ\n\n🔍 ลองพิมพ์ค้นหาด้วยคำสั้นๆ หรือชื่อเมนูอื่นได้เลยครับ!\n(หรือพิมพ์ "เมนูหลัก" เพื่อกลับหน้าหลัก)` }] 
@@ -809,5 +814,5 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server running with persistent search state & daily cron notifications!');
+  console.log('Server running with persistent search state & optimized performance!');
 });

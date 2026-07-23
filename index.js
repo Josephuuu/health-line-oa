@@ -62,37 +62,47 @@ async function handleEvent(event) {
 
   let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
-  // 🚨 บังคับลงทะเบียนครั้งแรก
-  if (!profile && currentState === 'MAIN_MENU' && !userMessage.includes('ลงทะเบียน')) {
+  // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง (ไว้สำหรับ Admin / Dev ทดสอบ)
+  const isRegTrigger = userMessage.includes('ลงทะเบียนประวัติสุขภาพ') || userMessage === 'ลงทะเบียน';
+
+  if (isRegTrigger) {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [getGenderFlexCard('ยินดีต้อนรับครับ! มาเริ่มลงทะเบียนประวัติสุขภาพกันก่อนนะครับ')]
+      messages: [getGenderFlexCard('🧪 [โหมดทดสอบ] เริ่มลงทะเบียนประวัติสุขภาพใหม่ครับ')]
+    });
+  }
+
+  // 🚨 ตรวจสอบผู้ใช้ใหม่ บังคับลงทะเบียนอัตโนมัติในครั้งแรกที่เข้าใช้งาน
+  if (!profile && currentState === 'MAIN_MENU') {
+    await updateState(userId, 'REG_GENDER', {});
+    return client.replyMessage({
+      replyToken: event.replyToken,
+      messages: [getGenderFlexCard('ยินดีต้อนรับครับ! เนื่องจากใช้งานครั้งแรก มาลงทะเบียนประวัติสุขภาพกันก่อนนะครับ 😊')]
     });
   }
 
   const mainMenuText = `📌 เมนูหลักระบบดูแลสุขภาพ:\n\n` +
-                       `• [ลงทะเบียนประวัติสุขภาพ]\n` +
-                       `• [ภารกิจสุขภาพประจำวัน]\n` +
-                       `• [แนะนำอาหารในโรงอาหาร]\n` +
-                       `• [ค้นหาคุณค่าทางโภชนาการ]\n\n` +
-                       `👉 พิมพ์ชื่อเมนู หรือพิมพ์ "เมนูหลัก" ได้ตลอดเวลาเลยครับ`;
+                       `1️⃣ [แบบทดสอบสุขภาพจิต]\n` +
+                       `2️⃣ [แนะนำอาหารลดน้ำหนัก]\n` +
+                       `3️⃣ [ภารกิจสุขภาพประจำวัน]\n` +
+                       `4️⃣ [คำนวณแคลอรี่และโภชนาการ]\n\n` +
+                       `👉 กดปุ่มบน Rich Menu หรือพิมพ์ชื่อเมนูเพื่อใช้งานได้เลยครับ!`;
 
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก' || userMessage === 'เมนู') {
     await updateState(userId, 'MAIN_MENU', {});
     return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: mainMenuText }] });
   }
 
-  // Interceptor ตรวจจับข้อความเมนูแบบเป็นธรรมชาติ (ไม่ใช้ตัวเลข)
-  const isRegTrigger = userMessage.includes('ลงทะเบียน') || userMessage.includes('ประวัติสุขภาพ');
+  // 🎯 Interceptor ตรวจจับ 4 ฟีเจอร์หลัก
+  const isMentalTrigger = userMessage.includes('สุขภาพจิต') || userMessage.includes('ประเมินสุขภาพจิต') || userMessage.includes('แบบทดสอบสุขภาพจิต');
+  const isFoodTrigger = userMessage.includes('แนะนำอาหาร') || userMessage.includes('อาหารลดน้ำหนัก');
   const isMissionTrigger = userMessage.includes('ภารกิจ') || userMessage.includes('บันทึกประจำวัน');
-  const isFoodTrigger = userMessage.includes('แนะนำอาหาร') || userMessage.includes('อาหารในโรงอาหาร');
-  const isSearchTrigger = userMessage.includes('ค้นหาคุณค่า') || userMessage.includes('ค้นหาโภชนาการ') || userMessage.includes('ค้นหาอาหาร');
-  const isMentalTrigger = userMessage.includes('สุขภาพจิต') || userMessage.includes('ประเมินสุขภาพจิต');
+  const isSearchTrigger = userMessage.includes('คำนวณแคลอรี่') || userMessage.includes('โภชนาการ') || userMessage.includes('ค้นหาอาหาร');
 
   const isAnsweringMentalTest = (currentState === 'MONTHLY_MENTAL') && ['0', '1', '2', '3'].includes(userMessage);
 
-  if ((isRegTrigger || isMissionTrigger || isFoodTrigger || isSearchTrigger || isMentalTrigger) && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
+  if ((isMentalTrigger || isFoodTrigger || isMissionTrigger || isSearchTrigger) && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
     currentState = 'MAIN_MENU';
     currentContext = {};
   }
@@ -102,13 +112,86 @@ async function handleEvent(event) {
   // ==========================================
   if (currentState === 'MAIN_MENU') {
     
-    // 1. ลงทะเบียนประวัติสุขภาพ
-    if (isRegTrigger) {
-      await updateState(userId, 'REG_GENDER', {});
-      return client.replyMessage({ replyToken: event.replyToken, messages: [getGenderFlexCard('มาเริ่มกรอกข้อมูลประวัติสุขภาพกันครับ')] });
+    // 1️⃣ ฟีเจอร์ 1: แบบทดสอบสุขภาพจิต (ทำได้ตลอดเวลา)
+    if (isMentalTrigger) {
+      currentContext = { current_q: 1, scores: {} };
+      await updateState(userId, 'MONTHLY_MENTAL', currentContext);
+      return sendMentalQuestion(event, 1, '🧠 [แบบทดสอบสุขภาพจิต]\nลองทำประเมินสภาวะอารมณ์สั้นๆ เพื่อตรวจเช็กสุขภาพใจกันครับ\n\n');
     }
 
-    // 2. ภารกิจสุขภาพประจำวันและบันทึกประจำวัน
+    // 2️⃣ ฟีเจอร์ 2: แนะนำอาหารลดน้ำหนัก
+    if (isFoodTrigger) {
+      await updateState(userId, 'MAIN_MENU', {});
+      const tdee = profile?.tdee || 2000;
+      const targetCal = Math.round((tdee - 500) / 3); // ลดแคลอรี่เพื่อการลดน้ำหนัก
+      const chronicDisease = profile?.chronic_disease || 'ไม่มี';
+      const dietary = profile?.dietary_restriction || 'ไม่มี';
+
+      let { data: allMenus } = await supabase.from('canteen_menus').select('*').lte('calories', targetCal);
+      if (!allMenus || allMenus.length === 0) {
+        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(50);
+        allMenus = fallback || [];
+      }
+
+      let fitMenus = allMenus.filter(item => {
+        const name = item.menu_name || '';
+        if (dietary.includes('อิสลาม') || dietary.includes('ฮาลาล')) {
+          if (['หมู', 'เบคอน', 'กุนเชียง', 'ตับหมู', 'หมูกรอบ'].some(kw => name.includes(kw))) return false;
+        }
+        if (dietary.includes('มังสวิรัติ') || dietary.includes('วีแกน')) {
+          if (['หมู', 'ไก่', 'เนื้อ', 'กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'เป็ด', 'ไข่', 'ตับ'].some(kw => name.includes(kw))) return false;
+        }
+        if (dietary.includes('แพ้อาหารทะเล')) {
+          if (['กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'ทะเล'].some(kw => name.includes(kw))) return false;
+        }
+        if (dietary.includes('แพ้ถั่ว')) {
+          if (['ถั่ว', 'เต้าหู้', 'ถั่วเหลือง'].some(kw => name.includes(kw))) return false;
+        }
+        return true;
+      });
+
+      if (fitMenus.length === 0) fitMenus = allMenus;
+      const randomSelected = fitMenus.sort(() => 0.5 - Math.random()).slice(0, 3);
+      const menuContents = randomSelected.map((item, idx) => ({
+        type: "box", layout: "horizontal", margin: "md",
+        contents: [
+          { type: "text", text: `${idx + 1}. ${item.menu_name}`, size: "sm", color: COLORS.NEUTRAL_DARK, flex: 4, weight: "bold" },
+          { type: "text", text: `${item.calories} kcal`, size: "sm", color: COLORS.PRIMARY, align: "end", flex: 2, weight: "bold" }
+        ]
+      }));
+
+      const flexMenuCard = {
+        type: "flex", altText: "🥗 เมนูอาหารแนะนำลดน้ำหนัก",
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
+            contents: [
+              { type: "text", text: "🥗 เมนูอาหารแนะนำลดน้ำหนัก", weight: "bold", size: "lg", color: COLORS.WHITE },
+              { type: "text", text: `เป้าหมายมื้อนี้: ไม่เกิน ${targetCal} kcal`, size: "xs", color: "#CCFBF1", margin: "xs" }
+            ]
+          },
+          body: {
+            type: "box", layout: "vertical",
+            contents: [
+              { type: "text", text: `🩺 โรคประจำตัว: ${chronicDisease}`, size: "xs", color: "#6B7280" },
+              { type: "text", text: `🥗 ข้อจำกัดอาหาร: ${dietary}`, size: "xs", color: COLORS.PRIMARY, weight: "bold", margin: "xs" },
+              { type: "separator", margin: "md" },
+              ...menuContents
+            ]
+          },
+          footer: {
+            type: "box", layout: "vertical",
+            contents: [
+              { type: "button", style: "primary", color: COLORS.SECONDARY, action: { type: "message", label: "🎲 สุ่มเมนูใหม่อีกครั้ง", text: "แนะนำอาหารลดน้ำหนัก" } }
+            ]
+          }
+        }
+      };
+      return client.replyMessage({ replyToken: event.replyToken, messages: [flexMenuCard] });
+    }
+
+    // 3️⃣ ฟีเจอร์ 3: ภารกิจสุขภาพประจำวัน + บันทึกประจำวัน (+อัปเดต W/H 7 วัน)
     if (isMissionTrigger) {
       const todayStr = new Date().toISOString().split('T')[0];
       let { data: missionLog } = await supabase.from('daily_missions').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
@@ -127,10 +210,8 @@ async function handleEvent(event) {
       const stretchPct = Math.min(100, Math.round((missionLog.stretch_count / 3) * 100));
       const totalPct = Math.round((waterPct + stepPct + stretchPct) / 3);
 
-      // Flex Card ปรับแก้ข้อความสั้นกระชับไม่โดนบีบเป็นจุดๆๆ
       const missionCard = {
-        type: "flex",
-        altText: "🎯 ภารกิจสุขภาพประจำวันของคุณ",
+        type: "flex", altText: "🎯 ภารกิจสุขภาพประจำวันของคุณ",
         contents: {
           type: "bubble",
           header: {
@@ -170,6 +251,9 @@ async function handleEvent(event) {
               { type: "button", style: "primary", color: COLORS.WARNING, height: "sm", margin: "xs", action: { type: "message", label: "👟 พิมพ์จำนวนก้าววันนี้", text: "บันทึกก้าวเดิน" } },
 
               { type: "separator", margin: "md" },
+              
+              // ⚖️ อัปเดตสัดส่วนประจำสัปดาห์ (ย้ายมาไว้ตรงนี้)
+              { type: "button", style: "secondary", height: "sm", margin: "md", action: { type: "message", label: "⚖️ อัปเดตน้ำหนัก/ส่วนสูง (รอบ 7 วัน)", text: "อัปเดตน้ำหนักส่วนสูง" } },
               { type: "button", style: "link", height: "sm", action: { type: "message", label: "🌤️ บันทึกอารมณ์/ความรู้สึกวันนี้", text: "เช็กอินอารมณ์" } }
             ]
           }
@@ -180,89 +264,10 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [missionCard] });
     }
 
-    // 3. แนะนำอาหารในโรงอาหาร
-    if (isFoodTrigger) {
-      await updateState(userId, 'MAIN_MENU', {});
-      const tdee = profile?.tdee || 2000;
-      const targetCal = Math.round((tdee - 500) / 3);
-      const chronicDisease = profile?.chronic_disease || 'ไม่มี';
-      const dietary = profile?.dietary_restriction || 'ไม่มี';
-
-      let { data: allMenus } = await supabase.from('canteen_menus').select('*').lte('calories', targetCal);
-      if (!allMenus || allMenus.length === 0) {
-        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(50);
-        allMenus = fallback || [];
-      }
-
-      let fitMenus = allMenus.filter(item => {
-        const name = item.menu_name || '';
-        if (dietary.includes('อิสลาม') || dietary.includes('ฮาลาล')) {
-          if (['หมู', 'เบคอน', 'กุนเชียง', 'ตับหมู', 'หมูกรอบ'].some(kw => name.includes(kw))) return false;
-        }
-        if (dietary.includes('มังสวิรัติ') || dietary.includes('วีแกน')) {
-          if (['หมู', 'ไก่', 'เนื้อ', 'กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'เป็ด', 'ไข่', 'ตับ'].some(kw => name.includes(kw))) return false;
-        }
-        if (dietary.includes('แพ้อาหารทะเล')) {
-          if (['กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'ทะเล'].some(kw => name.includes(kw))) return false;
-        }
-        if (dietary.includes('แพ้ถั่ว')) {
-          if (['ถั่ว', 'เต้าหู้', 'ถั่วเหลือง'].some(kw => name.includes(kw))) return false;
-        }
-        return true;
-      });
-
-      if (fitMenus.length === 0) fitMenus = allMenus;
-      const randomSelected = fitMenus.sort(() => 0.5 - Math.random()).slice(0, 3);
-      const menuContents = randomSelected.map((item, idx) => ({
-        type: "box", layout: "horizontal", margin: "md",
-        contents: [
-          { type: "text", text: `${idx + 1}. ${item.menu_name}`, size: "sm", color: COLORS.NEUTRAL_DARK, flex: 4, weight: "bold" },
-          { type: "text", text: `${item.calories} kcal`, size: "sm", color: COLORS.PRIMARY, align: "end", flex: 2, weight: "bold" }
-        ]
-      }));
-
-      const flexMenuCard = {
-        type: "flex", altText: "🍱 เมนูแนะนำประจำมื้อนี้",
-        contents: {
-          type: "bubble",
-          header: {
-            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
-            contents: [
-              { type: "text", text: "🍱 เมนูแนะนำประจำมื้อนี้", weight: "bold", size: "lg", color: COLORS.WHITE },
-              { type: "text", text: `เป้าหมายมื้อนี้: ไม่เกิน ${targetCal} kcal`, size: "xs", color: "#CCFBF1", margin: "xs" }
-            ]
-          },
-          body: {
-            type: "box", layout: "vertical",
-            contents: [
-              { type: "text", text: `🩺 โรคประจำตัว: ${chronicDisease}`, size: "xs", color: "#6B7280" },
-              { type: "text", text: `🥗 ข้อจำกัดอาหาร: ${dietary}`, size: "xs", color: COLORS.PRIMARY, weight: "bold", margin: "xs" },
-              { type: "separator", margin: "md" },
-              ...menuContents
-            ]
-          },
-          footer: {
-            type: "box", layout: "vertical",
-            contents: [
-              { type: "button", style: "primary", color: COLORS.SECONDARY, action: { type: "message", label: "🎲 สุ่มเมนูใหม่อีกครั้ง", text: "แนะนำอาหารในโรงอาหาร" } }
-            ]
-          }
-        }
-      };
-      return client.replyMessage({ replyToken: event.replyToken, messages: [flexMenuCard] });
-    }
-
-    // 4. ค้นหาคุณค่าทางโภชนาการ
+    // 4️⃣ ฟีเจอร์ 4: คำนวณแคลอรี่และโภชนาการ
     if (isSearchTrigger) {
       await updateState(userId, 'SEARCH_NUTRIENT', { offset: 0 });
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
-    }
-
-    // ฟีเจอร์เสริม: แบบทดสอบสุขภาพจิตประจำเดือน (ทริกเกอร์ตามรอบ)
-    if (isMentalTrigger) {
-      currentContext = { current_q: 1, scores: {} };
-      await updateState(userId, 'MONTHLY_MENTAL', currentContext);
-      return sendMentalQuestion(event, 1, '🧠 [แบบทดสอบสุขภาพจิตประจำเดือน]\nลองทำประเมินสภาวะอารมณ์สั้นๆ กันครับ\n\n');
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารในโรงเรียนที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
     }
   }
 
@@ -271,9 +276,15 @@ async function handleEvent(event) {
   // ==========================================
   switch (currentState) {
     
+    // โหมดรับค่าภารกิจ + อัปเดต W/H
     case 'MISSION_ACTION':
       const todayStr = new Date().toISOString().split('T')[0];
       
+      if (userMessage === 'อัปเดตน้ำหนักส่วนสูง') {
+        await updateState(userId, 'UPDATE_WEIGHT', {});
+        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚖️ มาอัปเดตน้ำหนักประจำสัปดาห์กันครับ! ตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
+      }
+
       if (userMessage === 'ระบุปริมาณน้ำ') {
         await updateState(userId, 'INPUT_WATER', {});
         return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💧 พิมพ์ปริมาณน้ำที่คุณดื่มลงไปได้เลยครับ (เป็นตัวเลข มล. เช่น 330)' }] });
@@ -298,7 +309,7 @@ async function handleEvent(event) {
 
         await supabase.from('daily_missions').upsert({ user_id: userId, log_date: todayStr, stretch_count: newStretch }, { onConflict: 'user_id,log_date' });
         await updateState(userId, 'MAIN_MENU', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `🧘‍♂️ บันทึกการยืดเส้นยืดสายเป็น ${newStretch} ครั้งแล้วครับ ช่วยผ่อนคลายกล้ามเนื้อได้ดีมากๆ ครับ 👍` }] });
+        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `🧘‍♂️ บันทึกการยืดเส้นยืดสายเป็น ${newStretch} ครั้งแล้วครับ ยอดเยี่ยมมากครับ! 👍` }] });
       }
 
       if (userMessage === 'บันทึกก้าวเดิน') {
@@ -312,9 +323,34 @@ async function handleEvent(event) {
       }
       break;
 
+    // สถานะอัปเดตสัดส่วน (รอบ 7 วัน)
+    case 'UPDATE_WEIGHT':
+      const newW = parseFloat(userMessage);
+      if (isNaN(newW) || newW <= 0) return replyErr(event, 'โปรดระบุน้ำหนักเป็นตัวเลขครับ');
+      currentContext.weight = newW;
+      await updateState(userId, 'UPDATE_HEIGHT', currentContext);
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '📐 และตอนนี้ส่วนสูงกี่เซนติเมตรครับ? (พิมพ์ตัวเลข เช่น 160)' }] });
+
+    case 'UPDATE_HEIGHT':
+      const newH = parseFloat(userMessage);
+      if (isNaN(newH) || newH <= 0) return replyErr(event, 'โปรดระบุส่วนสูงเป็นตัวเลขครับ');
+
+      // ดึงข้อมูลเดิมมาคำนวณใหม่
+      await saveUserProfile(
+        userId, profile.gender, profile.age, profile.user_type,
+        profile.chronic_disease, profile.dietary_restriction,
+        profile.lifestyle, currentContext.weight, newH
+      );
+
+      await updateState(userId, 'MAIN_MENU', {});
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: `🎉 อัปเดตสัดส่วนเรียบร้อยครับ!\n• น้ำหนัก: ${currentContext.weight} kg\n• ส่วนสูง: ${newH} cm\n\nระบบปรับคำนวณเป้าหมายสุขภาพให้คุณเรียบร้อยครับ ✨` }]
+      });
+
     case 'INPUT_WATER':
       const inputWater = parseInt(userMessage);
-      if (isNaN(inputWater) || inputWater <= 0) return replyErr(event, 'โปรดพิมพ์ตัวเลขปริมาณน้ำเป็น มิลลิลิตร ครับ (เช่น 330)');
+      if (isNaN(inputWater) || inputWater <= 0) return replyErr(event, 'โปรดพิมพ์ตัวเลขปริมาณน้ำเป็น มิลลิลิตร ครับ');
       
       const tDateWater = new Date().toISOString().split('T')[0];
       let { data: wLog } = await supabase.from('daily_missions').select('water_accum_ml').eq('user_id', userId).eq('log_date', tDateWater).single();
@@ -333,7 +369,7 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `👟 บันทึกก้าวเดินวันนี้: ${steps} ก้าว เรียบร้อยครับ! ✨` }] });
 
-    // ขั้นตอนลงทะเบียนประวัติแบบละเอียด
+    // ขั้นตอนลงทะเบียนประวัติสุขภาพ
     case 'REG_GENDER':
       if (userMessage !== 'ชาย' && userMessage !== 'หญิง') return replyErr(event, 'เลือก "ชาย" หรือ "หญิง" จากปุ่มได้เลยครับ');
       currentContext.gender = userMessage;
@@ -384,7 +420,6 @@ async function handleEvent(event) {
       currentContext.chronic_disease = userMessage;
       await updateState(userId, 'REG_DIET', currentContext);
       
-      // คืนความละเอียดข้อจำกัดทางอาหาร
       const dietCard = {
         type: "flex", altText: "โปรดเลือกข้อจำกัดทางอาหาร",
         contents: {
@@ -415,7 +450,6 @@ async function handleEvent(event) {
       currentContext.dietary_restriction = userMessage;
       await updateState(userId, 'REG_LIFESTYLE', currentContext);
       
-      // คืนความละเอียดพฤติกรรมประจำวัน (รวมพฤติกรรมเสี่ยง)
       const lifestyleCard = {
         type: "flex", altText: "โปรดเลือกพฤติกรรมการใช้ชีวิต",
         contents: {
@@ -461,7 +495,7 @@ async function handleEvent(event) {
         currentContext.lifestyle, currentContext.weight, h
       );
       await updateState(userId, 'MAIN_MENU', {});
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'บันทึกข้อมูลประวัติสุขภาพเรียบร้อยครับ! ✨\n\n' + mainMenuText }] });
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'บันทึกประวัติสุขภาพเรียบร้อยครับ! ✨\n\n' + mainMenuText }] });
 
     case 'DAILY_MOOD':
       currentContext.mood = userMessage;
@@ -477,12 +511,11 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกเรียบร้อยครับ ✨\n\n` + mainMenuText }] });
 
-    // ค้นหาโภชนาการ + ระบบค้นหาเมนูอื่นเพิ่มเติม (Pagination)
+    // ค้นหาโภชนาการ + ระบบ pagination
     case 'SEARCH_NUTRIENT':
       let searchKey = userMessage.trim();
       let currentOffset = currentContext.offset || 0;
 
-      // ถ้ากดปุ่ม "ดูเมนูอื่นเพิ่มเติม"
       if (userMessage.startsWith('ค้นหาเพิ่ม:')) {
         const parts = userMessage.split(':');
         searchKey = parts[1];
@@ -515,7 +548,6 @@ async function handleEvent(event) {
           }
         }));
 
-        // ถ้ายังมีเมนูเหลืออยู่อีก ให้เพิ่มการ์ดปุ่มกด "ดูเมนูอื่นเพิ่มเติม"
         const nextOffset = currentOffset + 3;
         if (count > nextOffset) {
           bubbles.push({
@@ -540,7 +572,7 @@ async function handleEvent(event) {
         return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `ไม่พบเมนูที่ค้นหา ลองค้นด้วยคำสั้นๆ ดูนะครับ\n\n` + mainMenuText }] });
       }
 
-    // แบบทดสอบสุขภาพจิต + แสดงผลการ์ด Flex สี่เหลี่ยมสวยงาม
+    // แบบทดสอบสุขภาพจิต
     case 'MONTHLY_MENTAL':
       const validScores = ['0', '1', '2', '3'];
       if (!validScores.includes(userMessage)) return replyErr(event, 'เลือกกดจากปุ่มได้เลยครับ');
@@ -561,16 +593,15 @@ async function handleEvent(event) {
         await supabase.from('mental_health_scores').insert({ user_id: userId, total_score: totalScore, result_text: mentalResult });
         await updateState(userId, 'MAIN_MENU', {});
 
-        // การ์ด Flex สี่เหลี่ยมสรุปผลประเมินสุขภาพจิตสวยงาม
         const mentalResultCard = {
-          type: "flex", altText: "🧠 รายงานผลการประเมินสุขภาพจิตประจำเดือน",
+          type: "flex", altText: "🧠 รายงานผลการประเมินสุขภาพจิต",
           contents: {
             type: "bubble",
             header: {
               type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
               contents: [
                 { type: "text", text: "🧠 รายงานผลประเมินสุขภาพจิต", weight: "bold", size: "md", color: COLORS.WHITE },
-                { type: "text", text: "ประเมินประจำเดือนล่าสุด", size: "xs", color: "#CCFBF1", margin: "xs" }
+                { type: "text", text: "ประเมินสุขภาพใจล่าสุด", size: "xs", color: "#CCFBF1", margin: "xs" }
               ]
             },
             body: {
@@ -694,5 +725,5 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server is running with natural text triggers and pagination!');
+  console.log('Server running with updated 4 core features and embedded weight/height tracking!');
 });

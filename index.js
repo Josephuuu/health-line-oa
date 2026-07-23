@@ -62,7 +62,7 @@ async function handleEvent(event) {
 
   let { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', userId).single();
 
-  // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง (ไว้สำหรับ Admin / Dev ทดสอบ)
+  // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง (สำหรับ Admin / Dev ทดสอบ)
   const isRegTrigger = userMessage.includes('ลงทะเบียนประวัติสุขภาพ') || userMessage === 'ลงทะเบียน';
 
   if (isRegTrigger) {
@@ -73,7 +73,7 @@ async function handleEvent(event) {
     });
   }
 
-  // 🚨 ตรวจสอบผู้ใช้ใหม่ บังคับลงทะเบียนอัตโนมัติในครั้งแรกที่เข้าใช้งาน
+  // 🚨 บังคับลงทะเบียนอัตโนมัติเฉพาะ User ใหม่ที่เข้ามาครั้งแรก
   if (!profile && currentState === 'MAIN_MENU') {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
@@ -82,11 +82,12 @@ async function handleEvent(event) {
     });
   }
 
+  // 📌 เรียงลำดับเมนูใหม่ตามที่คุณต้องการ (1 -> 4)
   const mainMenuText = `📌 เมนูหลักระบบดูแลสุขภาพ:\n\n` +
-                       `1️⃣ [แบบทดสอบสุขภาพจิต]\n` +
-                       `2️⃣ [แนะนำอาหารลดน้ำหนัก]\n` +
-                       `3️⃣ [ภารกิจสุขภาพประจำวัน]\n` +
-                       `4️⃣ [คำนวณแคลอรี่และโภชนาการ]\n\n` +
+                       `1️⃣ [คำนวณแคลอรี่และโภชนาการ]\n` +
+                       `2️⃣ [ภารกิจสุขภาพประจำวัน]\n` +
+                       `3️⃣ [แบบทดสอบสุขภาพจิต]\n` +
+                       `4️⃣ [แนะนำอาหารลดน้ำหนัก]\n\n` +
                        `👉 กดปุ่มบน Rich Menu หรือพิมพ์ชื่อเมนูเพื่อใช้งานได้เลยครับ!`;
 
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก' || userMessage === 'เมนู') {
@@ -95,35 +96,114 @@ async function handleEvent(event) {
   }
 
   // 🎯 Interceptor ตรวจจับ 4 ฟีเจอร์หลัก
+  const isSearchTrigger = userMessage.includes('คำนวณแคลอรี่') || userMessage.includes('โภชนาการ') || userMessage.includes('ค้นหาอาหาร');
+  const isMissionTrigger = userMessage.includes('ภารกิจ') || userMessage.includes('บันทึกประจำวัน');
   const isMentalTrigger = userMessage.includes('สุขภาพจิต') || userMessage.includes('ประเมินสุขภาพจิต') || userMessage.includes('แบบทดสอบสุขภาพจิต');
   const isFoodTrigger = userMessage.includes('แนะนำอาหาร') || userMessage.includes('อาหารลดน้ำหนัก');
-  const isMissionTrigger = userMessage.includes('ภารกิจ') || userMessage.includes('บันทึกประจำวัน');
-  const isSearchTrigger = userMessage.includes('คำนวณแคลอรี่') || userMessage.includes('โภชนาการ') || userMessage.includes('ค้นหาอาหาร');
 
   const isAnsweringMentalTest = (currentState === 'MONTHLY_MENTAL') && ['0', '1', '2', '3'].includes(userMessage);
 
-  if ((isMentalTrigger || isFoodTrigger || isMissionTrigger || isSearchTrigger) && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
+  if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger) && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
     currentState = 'MAIN_MENU';
     currentContext = {};
   }
 
   // ==========================================
-  // 📥 MAIN MENU ROUTING
+  // 📥 MAIN MENU ROUTING (เรียงลำดับ 1 - 4)
   // ==========================================
   if (currentState === 'MAIN_MENU') {
     
-    // 1️⃣ ฟีเจอร์ 1: แบบทดสอบสุขภาพจิต (ทำได้ตลอดเวลา)
+    // 1️⃣ ฟีเจอร์ 1: คำนวณแคลอรี่และโภชนาการ
+    if (isSearchTrigger) {
+      await updateState(userId, 'SEARCH_NUTRIENT', { offset: 0 });
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารในโรงเรียนที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
+    }
+
+    // 2️⃣ ฟีเจอร์ 2: ภารกิจสุขภาพประจำวัน + บันทึกประจำวัน
+    if (isMissionTrigger) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      let { data: missionLog } = await supabase.from('daily_missions').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
+
+      if (!missionLog) {
+        const { data: newLog } = await supabase.from('daily_missions').insert({
+          user_id: userId, log_date: todayStr, water_accum_ml: 0, stretch_count: 0, step_count: 0
+        }).select().single();
+        missionLog = newLog || { water_accum_ml: 0, stretch_count: 0, step_count: 0, streak_count: 1 };
+      }
+
+      const targetWater = profile?.target_water_ml || 2000;
+      const targetSteps = profile?.target_steps || 10000;
+      const waterPct = Math.min(100, Math.round((missionLog.water_accum_ml / targetWater) * 100));
+      const stepPct = Math.min(100, Math.round((missionLog.step_count / targetSteps) * 100));
+      const stretchPct = Math.min(100, Math.round((missionLog.stretch_count / 3) * 100));
+      const totalPct = Math.round((waterPct + stepPct + stretchPct) / 3);
+
+      const missionCard = {
+        type: "flex", altText: "🎯 ภารกิจสุขภาพประจำวันของคุณ",
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
+            contents: [
+              { type: "text", text: "🎯 ภารกิจสุขภาพประจำวัน", color: COLORS.WHITE, weight: "bold", size: "md" },
+              { type: "text", text: `สำเร็จรวม: ${totalPct}% | ต่อเนื่อง: ${missionLog.streak_count || 1} วัน 🔥`, color: "#CCFBF1", size: "xs", margin: "xs" }
+            ]
+          },
+          body: {
+            type: "box", layout: "vertical",
+            contents: [
+              // 💧 ดื่มน้ำ
+              { type: "text", text: `💧 ดื่มน้ำ: ${missionLog.water_accum_ml} / ${targetWater} ml (${waterPct}%)`, size: "xs", color: COLORS.ACCENT, weight: "bold" },
+              {
+                type: "box", layout: "horizontal", margin: "xs",
+                contents: [
+                  { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "+250ml", text: "บันทึกน้ำ 250" } },
+                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "+500ml", text: "บันทึกน้ำ 500" } },
+                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "ระบุเอง", text: "ระบุปริมาณน้ำ" } }
+                ]
+              },
+
+              // 🧘‍♂️ ยืดเส้นยืดสาย (ปรับแก้ไขความยาวปุ่ม ให้ไม่ถูกตัดคำว่า "ครบ...")
+              { type: "text", text: `🧘‍♂️ ยืดตัว: ${missionLog.stretch_count} / 3-5 ครั้ง`, size: "xs", color: COLORS.SECONDARY, margin: "md", weight: "bold" },
+              {
+                type: "box", layout: "horizontal", margin: "xs",
+                contents: [
+                  { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", action: { type: "message", label: "+1 ครั้ง", text: "บันทึกยืดตัว 1" } },
+                  { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", margin: "xs", action: { type: "message", label: "3 ครั้ง", text: "บันทึกยืดตัว 3" } },
+                  { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", margin: "xs", action: { type: "message", label: "5 ครั้ง", text: "บันทึกยืดตัว 5" } }
+                ]
+              },
+
+              // 🚶‍♂️ เดินสะสม
+              { type: "text", text: `🚶‍♂️ เดินสะสม: ${missionLog.step_count} / ${targetSteps} ก้าว (${stepPct}%)`, size: "xs", color: COLORS.WARNING, margin: "md", weight: "bold" },
+              { type: "button", style: "primary", color: COLORS.WARNING, height: "sm", margin: "xs", action: { type: "message", label: "👟 บันทึกจำนวนก้าวเดิน", text: "บันทึกก้าวเดิน" } },
+
+              { type: "separator", margin: "md" },
+              
+              // ⚖️ อัปเดตสัดส่วนประจำสัปดาห์
+              { type: "button", style: "secondary", height: "sm", margin: "md", action: { type: "message", label: "⚖️ อัปเดตน้ำหนัก/ส่วนสูง (7 วัน)", text: "อัปเดตน้ำหนักส่วนสูง" } },
+              { type: "button", style: "link", height: "sm", action: { type: "message", label: "🌤️ บันทึกอารมณ์/ความรู้สึกวันนี้", text: "เช็กอินอารมณ์" } }
+            ]
+          }
+        }
+      };
+
+      await updateState(userId, 'MISSION_ACTION', {});
+      return client.replyMessage({ replyToken: event.replyToken, messages: [missionCard] });
+    }
+
+    // 3️⃣ ฟีเจอร์ 3: แบบทดสอบสุขภาพจิต
     if (isMentalTrigger) {
       currentContext = { current_q: 1, scores: {} };
       await updateState(userId, 'MONTHLY_MENTAL', currentContext);
       return sendMentalQuestion(event, 1, '🧠 [แบบทดสอบสุขภาพจิต]\nลองทำประเมินสภาวะอารมณ์สั้นๆ เพื่อตรวจเช็กสุขภาพใจกันครับ\n\n');
     }
 
-    // 2️⃣ ฟีเจอร์ 2: แนะนำอาหารลดน้ำหนัก
+    // 4️⃣ ฟีเจอร์ 4: แนะนำอาหารลดน้ำหนัก
     if (isFoodTrigger) {
       await updateState(userId, 'MAIN_MENU', {});
       const tdee = profile?.tdee || 2000;
-      const targetCal = Math.round((tdee - 500) / 3); // ลดแคลอรี่เพื่อการลดน้ำหนัก
+      const targetCal = Math.round((tdee - 500) / 3);
       const chronicDisease = profile?.chronic_disease || 'ไม่มี';
       const dietary = profile?.dietary_restriction || 'ไม่มี';
 
@@ -190,85 +270,6 @@ async function handleEvent(event) {
       };
       return client.replyMessage({ replyToken: event.replyToken, messages: [flexMenuCard] });
     }
-
-    // 3️⃣ ฟีเจอร์ 3: ภารกิจสุขภาพประจำวัน + บันทึกประจำวัน (+อัปเดต W/H 7 วัน)
-    if (isMissionTrigger) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      let { data: missionLog } = await supabase.from('daily_missions').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
-
-      if (!missionLog) {
-        const { data: newLog } = await supabase.from('daily_missions').insert({
-          user_id: userId, log_date: todayStr, water_accum_ml: 0, stretch_count: 0, step_count: 0
-        }).select().single();
-        missionLog = newLog || { water_accum_ml: 0, stretch_count: 0, step_count: 0, streak_count: 1 };
-      }
-
-      const targetWater = profile?.target_water_ml || 2000;
-      const targetSteps = profile?.target_steps || 10000;
-      const waterPct = Math.min(100, Math.round((missionLog.water_accum_ml / targetWater) * 100));
-      const stepPct = Math.min(100, Math.round((missionLog.step_count / targetSteps) * 100));
-      const stretchPct = Math.min(100, Math.round((missionLog.stretch_count / 3) * 100));
-      const totalPct = Math.round((waterPct + stepPct + stretchPct) / 3);
-
-      const missionCard = {
-        type: "flex", altText: "🎯 ภารกิจสุขภาพประจำวันของคุณ",
-        contents: {
-          type: "bubble",
-          header: {
-            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
-            contents: [
-              { type: "text", text: "🎯 ภารกิจสุขภาพประจำวัน", color: COLORS.WHITE, weight: "bold", size: "md" },
-              { type: "text", text: `สำเร็จรวม: ${totalPct}% | ต่อเนื่อง: ${missionLog.streak_count || 1} วัน 🔥`, color: "#CCFBF1", size: "xs", margin: "xs" }
-            ]
-          },
-          body: {
-            type: "box", layout: "vertical",
-            contents: [
-              // 💧 ดื่มน้ำ
-              { type: "text", text: `💧 ดื่มน้ำ: ${missionLog.water_accum_ml} / ${targetWater} ml (${waterPct}%)`, size: "xs", color: COLORS.ACCENT, weight: "bold" },
-              {
-                type: "box", layout: "horizontal", margin: "xs",
-                contents: [
-                  { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "+250ml", text: "บันทึกน้ำ 250" } },
-                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "+500ml", text: "บันทึกน้ำ 500" } },
-                  { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "ใส่เลขเอง", text: "ระบุปริมาณน้ำ" } }
-                ]
-              },
-
-              // 🧘‍♂️ ยืดเส้นยืดสาย
-              { type: "text", text: `🧘‍♂️ ยืดตัว: ${missionLog.stretch_count} / 3-5 ครั้ง`, size: "xs", color: COLORS.SECONDARY, margin: "md", weight: "bold" },
-              {
-                type: "box", layout: "horizontal", margin: "xs",
-                contents: [
-                  { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", action: { type: "message", label: "+1 ครั้ง", text: "บันทึกยืดตัว 1" } },
-                  { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", margin: "xs", action: { type: "message", label: "ครบ 3 ครั้ง", text: "บันทึกยืดตัว 3" } },
-                  { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", margin: "xs", action: { type: "message", label: "ครบ 5 ครั้ง", text: "บันทึกยืดตัว 5" } }
-                ]
-              },
-
-              // 🚶‍♂️ เดินสะสม
-              { type: "text", text: `🚶‍♂️ เดินสะสม: ${missionLog.step_count} / ${targetSteps} ก้าว (${stepPct}%)`, size: "xs", color: COLORS.WARNING, margin: "md", weight: "bold" },
-              { type: "button", style: "primary", color: COLORS.WARNING, height: "sm", margin: "xs", action: { type: "message", label: "👟 พิมพ์จำนวนก้าววันนี้", text: "บันทึกก้าวเดิน" } },
-
-              { type: "separator", margin: "md" },
-              
-              // ⚖️ อัปเดตสัดส่วนประจำสัปดาห์ (ย้ายมาไว้ตรงนี้)
-              { type: "button", style: "secondary", height: "sm", margin: "md", action: { type: "message", label: "⚖️ อัปเดตน้ำหนัก/ส่วนสูง (รอบ 7 วัน)", text: "อัปเดตน้ำหนักส่วนสูง" } },
-              { type: "button", style: "link", height: "sm", action: { type: "message", label: "🌤️ บันทึกอารมณ์/ความรู้สึกวันนี้", text: "เช็กอินอารมณ์" } }
-            ]
-          }
-        }
-      };
-
-      await updateState(userId, 'MISSION_ACTION', {});
-      return client.replyMessage({ replyToken: event.replyToken, messages: [missionCard] });
-    }
-
-    // 4️⃣ ฟีเจอร์ 4: คำนวณแคลอรี่และโภชนาการ
-    if (isSearchTrigger) {
-      await updateState(userId, 'SEARCH_NUTRIENT', { offset: 0 });
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารในโรงเรียนที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
-    }
   }
 
   // ==========================================
@@ -276,7 +277,7 @@ async function handleEvent(event) {
   // ==========================================
   switch (currentState) {
     
-    // โหมดรับค่าภารกิจ + อัปเดต W/H
+    // โหมดรับค่าภารกิจ
     case 'MISSION_ACTION':
       const todayStr = new Date().toISOString().split('T')[0];
       
@@ -305,7 +306,7 @@ async function handleEvent(event) {
         const valStr = userMessage.replace('บันทึกยืดตัว', '').replace('ยืด', '').trim();
         const addedStretch = parseInt(valStr) || 1;
         let { data: mLog } = await supabase.from('daily_missions').select('stretch_count').eq('user_id', userId).eq('log_date', todayStr).single();
-        const newStretch = (userMessage.includes('ครบ')) ? addedStretch : Math.max(addedStretch, (mLog?.stretch_count || 0) + addedStretch);
+        const newStretch = (addedStretch > 1) ? addedStretch : (mLog?.stretch_count || 0) + addedStretch;
 
         await supabase.from('daily_missions').upsert({ user_id: userId, log_date: todayStr, stretch_count: newStretch }, { onConflict: 'user_id,log_date' });
         await updateState(userId, 'MAIN_MENU', {});
@@ -335,7 +336,6 @@ async function handleEvent(event) {
       const newH = parseFloat(userMessage);
       if (isNaN(newH) || newH <= 0) return replyErr(event, 'โปรดระบุส่วนสูงเป็นตัวเลขครับ');
 
-      // ดึงข้อมูลเดิมมาคำนวณใหม่
       await saveUserProfile(
         userId, profile.gender, profile.age, profile.user_type,
         profile.chronic_disease, profile.dietary_restriction,
@@ -383,6 +383,7 @@ async function handleEvent(event) {
 
       if (age >= 12 && age <= 18) {
         await updateState(userId, 'REG_STUDENT_LEVEL', currentContext);
+        // ปรับแก้ชื่อปุ่ม มัธยมศึกษาตอนต้น / มัธยมศึกษาตอนปลาย ตัดวงเล็บออกเพื่อไม่ให้ตกขอบ
         const levelCard = {
           type: "flex", altText: "โปรดเลือกระดับชั้นเรียน",
           contents: {
@@ -397,8 +398,8 @@ async function handleEvent(event) {
             body: {
               type: "box", layout: "vertical",
               contents: [
-                { type: "button", style: "primary", color: COLORS.SECONDARY, margin: "xs", action: { type: "message", label: "🏫 มัธยมศึกษาตอนต้น (ม.ต้น)", text: "ม.ต้น" } },
-                { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🎓 มัธยมศึกษาตอนปลาย (ม.ปลาย)", text: "ม.ปลาย" } }
+                { type: "button", style: "primary", color: COLORS.SECONDARY, margin: "xs", action: { type: "message", label: "มัธยมศึกษาตอนต้น", text: "มัธยมศึกษาตอนต้น" } },
+                { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "มัธยมศึกษาตอนปลาย", text: "มัธยมศึกษาตอนปลาย" } }
               ]
             }
           }
@@ -411,7 +412,9 @@ async function handleEvent(event) {
       }
 
     case 'REG_STUDENT_LEVEL':
-      if (userMessage !== 'ม.ต้น' && userMessage !== 'ม.ปลาย') return replyErr(event, 'เลือก "ม.ต้น" หรือ "ม.ปลาย" จากปุ่มได้เลยครับ');
+      if (userMessage !== 'มัธยมศึกษาตอนต้น' && userMessage !== 'มัธยมศึกษาตอนปลาย' && userMessage !== 'ม.ต้น' && userMessage !== 'ม.ปลาย') {
+        return replyErr(event, 'เลือก "มัธยมศึกษาตอนต้น" หรือ "มัธยมศึกษาตอนปลาย" จากปุ่มได้เลยครับ');
+      }
       currentContext.user_type = userMessage;
       await updateState(userId, 'REG_DISEASE', currentContext);
       return sendDiseaseCard(event);
@@ -450,6 +453,7 @@ async function handleEvent(event) {
       currentContext.dietary_restriction = userMessage;
       await updateState(userId, 'REG_LIFESTYLE', currentContext);
       
+      // ปรับย่อข้อความปุ่ม พฤติกรรมและวิถีชีวิต ไม่ให้ยาวจนตกขอบ
       const lifestyleCard = {
         type: "flex", altText: "โปรดเลือกพฤติกรรมการใช้ชีวิต",
         contents: {
@@ -464,9 +468,9 @@ async function handleEvent(event) {
           body: {
             type: "box", layout: "vertical",
             contents: [
-              { type: "button", style: "primary", color: "#0284C7", margin: "xs", action: { type: "message", label: "🖥️ นั่งเรียน / นั่งทำงานส่วนใหญ่", text: "นั่งทำงานทั่วไป" } },
-              { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🛠️ เคลื่อนไหวเยอะ / ออกกำลังกายบ่อย", text: "ทำงานหนักใช้แรง" } },
-              { type: "button", style: "primary", color: "#DC2626", margin: "sm", action: { type: "message", label: "🚬 มีสูบบุหรี่ หรือดื่มสุราประจำ", text: "สูบบุหรี่/ดื่มสุราประจำ" } }
+              { type: "button", style: "primary", color: "#0284C7", margin: "xs", action: { type: "message", label: "🖥️ นั่งเรียน/ทำงานส่วนใหญ่", text: "นั่งทำงานทั่วไป" } },
+              { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🏃 เคลื่อนไหวบ่อย/ออกกำลัง", text: "ทำงานหนักใช้แรง" } },
+              { type: "button", style: "primary", color: "#DC2626", margin: "sm", action: { type: "message", label: "🚬 สูบบุหรี่/ดื่มสุราประจำ", text: "สูบบุหรี่/ดื่มสุราประจำ" } }
             ]
           }
         }
@@ -511,7 +515,7 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกเรียบร้อยครับ ✨\n\n` + mainMenuText }] });
 
-    // ค้นหาโภชนาการ + ระบบ pagination
+    // ค้นหาโภชนาการ
     case 'SEARCH_NUTRIENT':
       let searchKey = userMessage.trim();
       let currentOffset = currentContext.offset || 0;
@@ -526,7 +530,7 @@ async function handleEvent(event) {
         .from('canteen_menus')
         .select('*', { count: 'exact' })
         .ilike('menu_name', `%${searchKey}%`)
-        .range(currentOffset, currentOffset + 2);
+        .range(currentOffset, currentOffset + 1);
 
       if (matchedMenus && matchedMenus.length > 0) {
         const bubbles = matchedMenus.map((meal) => ({
@@ -548,7 +552,7 @@ async function handleEvent(event) {
           }
         }));
 
-        const nextOffset = currentOffset + 3;
+        const nextOffset = currentOffset + 2;
         if (count > nextOffset) {
           bubbles.push({
             type: "bubble",
@@ -725,5 +729,5 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server running with updated 4 core features and embedded weight/height tracking!');
+  console.log('Server running with updated feature order and compact Flex buttons!');
 });

@@ -36,14 +36,13 @@ const MENTAL_QUESTIONS = [
 ];
 
 // ==========================================
-// ⏰ DAILY NOTIFICATION SCHEDULER (ระบบแจ้งเตือนภารกิจ - ปรับปรุงความเร็ว)
+// ⏰ DAILY NOTIFICATION SCHEDULER
 // ==========================================
 async function broadcastPushNotification(messageText) {
   try {
     const { data: users, error } = await supabase.from('user_profiles').select('user_id');
     if (error || !users || users.length === 0) return;
 
-    // ⚡ ปรับปรุง: ยิง Push Message พร้อมกันทุกเครื่อง ไม่บล็อก Server
     const pushPromises = users.map(u => 
       client.pushMessage({
         to: u.user_id,
@@ -57,28 +56,16 @@ async function broadcastPushNotification(messageText) {
   }
 }
 
-// 🌅 08:00 น. แจ้งเตือนช่วงเช้า
 cron.schedule('0 8 * * *', () => {
-  console.log('⏰ Trigger: Morning Notification (08:00)');
-  broadcastPushNotification(
-    '🌅 สวัสดีตอนเช้าครับ!\n\nอย่าลืมดื่มน้ำ 1 แก้วเพื่อปลุกร่างกายให้สดชื่นนะครับ 💧\n\n🎯 วันนี้มาพิชิตภารกิจสุขภาพประจำวันกัน! พิมพ์ "ภารกิจ" เพื่อเริ่มบันทึกได้เลยครับ ✨'
-  );
+  broadcastPushNotification('🌅 สวัสดีตอนเช้าครับ!\n\nอย่าลืมดื่มน้ำ 1 แก้วเพื่อปลุกร่างกายให้สดชื่นนะครับ 💧\n\n🎯 วันนี้มาพิชิตภารกิจสุขภาพประจำวันกัน! พิมพ์ "ภารกิจ" เพื่อเริ่มบันทึกได้เลยครับ ✨');
 }, { timezone: "Asia/Bangkok" });
 
-// ☀️ 14:00 น. แจ้งเตือนช่วงบ่าย
 cron.schedule('0 14 * * *', () => {
-  console.log('⏰ Trigger: Afternoon Notification (14:00)');
-  broadcastPushNotification(
-    '☀️ พักสายตาและยืดเส้นยืดสายกันหน่อยครับ! 🧘‍♂️\n\nนั่งเรียน/ทำงานนานๆ อาจเมื่อยล้าได้ ขยับร่างกายสัก 1-2 นาที และอย่าลืมจิบน้ำเติมพลังด้วยนะครับ 💧'
-  );
+  broadcastPushNotification('☀️ พักสายตาและยืดเส้นยืดสายกันหน่อยครับ! 🧘‍♂️\n\nขยับร่างกายสัก 1-2 นาที และอย่าลืมจิบน้ำเติมพลังด้วยนะครับ 💧');
 }, { timezone: "Asia/Bangkok" });
 
-// 🌆 20:00 น. แจ้งเตือนช่วงค่ำ
 cron.schedule('0 20 * * *', () => {
-  console.log('⏰ Trigger: Evening Notification (20:00)');
-  broadcastPushNotification(
-    '🌆 โค้งสุดท้ายของวันแล้วครับ! 🎯\n\nวันนี้คุณดื่มน้ำ เดินก้าวสะสม หรือยืดตัวครบเป้าหมายหรือยังครับ? พิมพ์ "ภารกิจ" เพื่อเช็กอินและสรุปผลประจำวันได้เลยครับ ✨'
-  );
+  broadcastPushNotification('🌆 โค้งสุดท้ายของวันแล้วครับ! 🎯\n\nวันนี้คุณดื่มน้ำ เดินก้าวสะสม หรือยืดตัวครบเป้าหมายหรือยังครับ? พิมพ์ "ภารกิจ" เพื่อเช็กอินได้เลยครับ ✨');
 }, { timezone: "Asia/Bangkok" });
 
 app.get('/', (req, res) => res.send('Health Bot status: Active!'));
@@ -98,7 +85,7 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const userMessage = event.message.text.trim();
 
-  // ⚡ ปรับปรุง: ดึง user_states และ user_profiles พร้อมกันในคราวเดียว (Parallel Query)
+  // Parallel Query เพื่อความเร็ว
   const [stateRes, profileRes] = await Promise.all([
     supabase.from('user_states').select('state, context').eq('user_id', userId).single(),
     supabase.from('user_profiles').select('*').eq('user_id', userId).single()
@@ -115,10 +102,8 @@ async function handleEvent(event) {
     currentState = 'MAIN_MENU';
   }
 
-  // 🔑 Trigger คำสั่งลงทะเบียนด้วยตัวเอง
-  const isRegTrigger = userMessage.includes('ลงทะเบียนประวัติสุขภาพ') || userMessage === 'ลงทะเบียน';
-
-  if (isRegTrigger) {
+  // Trigger ลงทะเบียนประวัติสุขภาพ
+  if (userMessage.includes('ลงทะเบียนประวัติสุขภาพ') || userMessage === 'ลงทะเบียน') {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
       replyToken: event.replyToken,
@@ -126,7 +111,7 @@ async function handleEvent(event) {
     });
   }
 
-  // 🚨 บังคับลงทะเบียนอัตโนมัติเฉพาะ User ใหม่
+  // บังคับลงทะเบียนอัตโนมัติเฉพาะ User ใหม่
   if (!profile && currentState === 'MAIN_MENU') {
     await updateState(userId, 'REG_GENDER', {});
     return client.replyMessage({
@@ -139,23 +124,26 @@ async function handleEvent(event) {
                        `1️⃣ [คำนวณแคลอรี่และโภชนาการ]\n` +
                        `2️⃣ [ภารกิจสุขภาพประจำวัน]\n` +
                        `3️⃣ [แบบทดสอบสุขภาพจิต]\n` +
-                       `4️⃣ [แนะนำอาหารลดน้ำหนัก]\n\n` +
-                       `👉 กดปุ่มบน Rich Menu หรือพิมพ์ชื่อเมนูเพื่อใช้งานได้เลยครับ!`;
+                       `4️⃣ [แนะนำอาหารลดน้ำหนัก]\n` +
+                       `5️⃣ [อัปเดตน้ำหนักและส่วนสูง]\n` +
+                       `6️⃣ [ประเมินความพึงพอใจ] (กดปุ่มบน Rich Menu ได้เลยครับ)\n\n` +
+                       `👉 กดปุ่มบน Rich Menu หรือพิมพ์ชื่อเมนูที่ต้องการได้เลยครับ!`;
 
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก' || userMessage === 'เมนู') {
     await updateState(userId, 'MAIN_MENU', {});
     return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: mainMenuText }] });
   }
 
-  // 🎯 Interceptor ตรวจจับ 4 ฟีเจอร์หลัก
+  // 🎯 Interceptors ตรวจจับฟีเจอร์หลัก
   const isSearchTrigger = userMessage.includes('คำนวณแคลอรี่') || userMessage.includes('โภชนาการ') || userMessage.includes('ค้นหาอาหาร');
   const isMissionTrigger = userMessage.includes('ภารกิจ') || userMessage.includes('บันทึกประจำวัน');
   const isMentalTrigger = userMessage.includes('สุขภาพจิต') || userMessage.includes('ประเมินสุขภาพจิต') || userMessage.includes('แบบทดสอบสุขภาพจิต');
   const isFoodTrigger = userMessage.includes('แนะนำอาหาร') || userMessage.includes('อาหารลดน้ำหนัก');
+  const isUpdateBodyTrigger = userMessage.includes('อัปเดตน้ำหนัก') || userMessage.includes('น้ำหนักส่วนสูง') || userMessage.includes('อัปเดตสัดส่วน');
 
-  const isAnsweringMentalTest = (currentState === 'MONTHLY_MENTAL') && ['0', '1', '2', '3'].includes(userMessage);
+  const isAnsweringTest = currentState === 'MONTHLY_MENTAL' && ['0', '1', '2', '3'].includes(userMessage);
 
-  if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger) && !isAnsweringMentalTest && currentState !== 'MAIN_MENU') {
+  if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger || isUpdateBodyTrigger) && !isAnsweringTest && currentState !== 'MAIN_MENU') {
     currentState = 'MAIN_MENU';
     currentContext = {};
   }
@@ -165,13 +153,13 @@ async function handleEvent(event) {
   // ==========================================
   if (currentState === 'MAIN_MENU') {
     
-    // 1️⃣ ฟีเจอร์ 1: คำนวณแคลอรี่และโภชนาการ
+    // 1️⃣ คำนวณแคลอรี่และโภชนาการ
     if (isSearchTrigger) {
       await updateState(userId, 'SEARCH_NUTRIENT', { offset: 0 });
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารในโรงเรียนที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
     }
 
-    // 2️⃣ ฟีเจอร์ 2: ภารกิจสุขภาพประจำวัน
+    // 2️⃣ ภารกิจสุขภาพประจำวัน
     if (isMissionTrigger) {
       const todayStr = new Date().toISOString().split('T')[0];
       let { data: missionLog } = await supabase.from('daily_missions').select('*').eq('user_id', userId).eq('log_date', todayStr).single();
@@ -204,7 +192,6 @@ async function handleEvent(event) {
           body: {
             type: "box", layout: "vertical",
             contents: [
-              // 💧 ดื่มน้ำ
               { type: "text", text: `💧 ดื่มน้ำ: ${missionLog.water_accum_ml} / ${targetWater} ml (${waterPct}%)`, size: "xs", color: COLORS.ACCENT, weight: "bold" },
               {
                 type: "box", layout: "horizontal", margin: "xs",
@@ -214,8 +201,6 @@ async function handleEvent(event) {
                   { type: "button", style: "secondary", height: "sm", margin: "xs", action: { type: "message", label: "ระบุ", text: "ระบุปริมาณน้ำ" } }
                 ]
               },
-
-              // 🧘‍♂️ ยืดเส้นยืดสาย
               { type: "text", text: `🧘‍♂️ ยืดตัว: ${missionLog.stretch_count} / 3-5 ครั้ง`, size: "xs", color: COLORS.SECONDARY, margin: "md", weight: "bold" },
               {
                 type: "box", layout: "horizontal", margin: "xs",
@@ -225,16 +210,10 @@ async function handleEvent(event) {
                   { type: "button", style: "primary", color: COLORS.SECONDARY, height: "sm", margin: "xs", action: { type: "message", label: "5 ครั้ง", text: "บันทึกยืดตัว 5" } }
                 ]
               },
-
-              // 🚶‍♂️ เดินสะสม
               { type: "text", text: `🚶‍♂️ เดินสะสม: ${missionLog.step_count} / ${targetSteps} ก้าว (${stepPct}%)`, size: "xs", color: COLORS.WARNING, margin: "md", weight: "bold" },
               { type: "button", style: "primary", color: COLORS.WARNING, height: "sm", margin: "xs", action: { type: "message", label: "👟 บันทึกจำนวนก้าวเดิน", text: "บันทึกก้าวเดิน" } },
-
               { type: "separator", margin: "md" },
-              
-              // ⚖️ อัปเดตสัดส่วนประจำสัปดาห์
-              { type: "button", style: "secondary", height: "sm", margin: "md", action: { type: "message", label: "⚖️ อัปเดตน้ำหนัก/ส่วนสูง (7 วัน)", text: "อัปเดตน้ำหนักส่วนสูง" } },
-              { type: "button", style: "link", height: "sm", action: { type: "message", label: "🌤️ บันทึกอารมณ์/ความรู้สึกวันนี้", text: "เช็กอินอารมณ์" } }
+              { type: "button", style: "link", height: "sm", margin: "xs", action: { type: "message", label: "🌤️ บันทึกอารมณ์/ความรู้สึกวันนี้", text: "เช็กอินอารมณ์" } }
             ]
           }
         }
@@ -244,14 +223,14 @@ async function handleEvent(event) {
       return client.replyMessage({ replyToken: event.replyToken, messages: [missionCard] });
     }
 
-    // 3️⃣ ฟีเจอร์ 3: แบบทดสอบสุขภาพจิต
+    // 3️⃣ แบบทดสอบสุขภาพจิต
     if (isMentalTrigger) {
       currentContext = { current_q: 1, scores: {} };
       await updateState(userId, 'MONTHLY_MENTAL', currentContext);
       return sendMentalQuestion(event, 1, '🧠 [แบบทดสอบสุขภาพจิต]\nลองทำประเมินสภาวะอารมณ์สั้นๆ เพื่อตรวจเช็กสุขภาพใจกันครับ\n\n');
     }
 
-    // 4️⃣ ฟีเจอร์ 4: แนะนำอาหารลดน้ำหนัก
+    // 4️⃣ แนะนำอาหารลดน้ำหนัก (คัดกรองโรคระบาดและข้อจำกัดแบบละเอียดยิบ)
     if (isFoodTrigger) {
       await updateState(userId, 'MAIN_MENU', {});
       const tdee = profile?.tdee || 2000;
@@ -261,24 +240,45 @@ async function handleEvent(event) {
 
       let { data: allMenus } = await supabase.from('canteen_menus').select('*').lte('calories', targetCal);
       if (!allMenus || allMenus.length === 0) {
-        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(50);
+        let { data: fallback } = await supabase.from('canteen_menus').select('*').limit(60);
         allMenus = fallback || [];
       }
 
+      // 🛡️ Filter กรองเมนูอาหารตามโรคและข้อจำกัด
       let fitMenus = allMenus.filter(item => {
         const name = item.menu_name || '';
+
+        // --- 1. ตรวจสอบข้อจำกัดทางอาหารและอาการแพ้ ---
         if (dietary.includes('อิสลาม') || dietary.includes('ฮาลาล')) {
-          if (['หมู', 'เบคอน', 'กุนเชียง', 'ตับหมู', 'หมูกรอบ'].some(kw => name.includes(kw))) return false;
+          if (['หมู', 'เบคอน', 'กุนเชียง', 'ตับหมู', 'หมูกรอบ', 'แคบหมู'].some(kw => name.includes(kw))) return false;
         }
         if (dietary.includes('มังสวิรัติ') || dietary.includes('วีแกน')) {
           if (['หมู', 'ไก่', 'เนื้อ', 'กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'เป็ด', 'ไข่', 'ตับ'].some(kw => name.includes(kw))) return false;
         }
         if (dietary.includes('แพ้อาหารทะเล')) {
-          if (['กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'ทะเล'].some(kw => name.includes(kw))) return false;
+          if (['กุ้ง', 'หมึก', 'ปลา', 'ปู', 'หอย', 'ทะเล', 'กะปิ'].some(kw => name.includes(kw))) return false;
         }
         if (dietary.includes('แพ้ถั่ว')) {
-          if (['ถั่ว', 'เต้าหู้', 'ถั่วเหลือง'].some(kw => name.includes(kw))) return false;
+          if (['ถั่ว', 'เต้าหู้', 'ถั่วเหลือง', 'พะแนง', 'มัสมั่น'].some(kw => name.includes(kw))) return false;
         }
+        if (dietary.includes('แพ้นม')) {
+          if (['นม', 'เนย', 'ชีส', 'คอร์นเฟลก', 'ชานม', 'เบเกอรี่'].some(kw => name.includes(kw))) return false;
+        }
+        if (dietary.includes('แพ้ไข่')) {
+          if (['ไข่', 'ดาว', 'เจียว', 'ต้ม', 'ตุ๋น', 'เยี่ยวม้า', 'เค็ม', 'ผัดไข่'].some(kw => name.includes(kw))) return false;
+        }
+
+        // --- 2. ตรวจสอบเงื่อนไขตามโรคประจำตัว ---
+        if (chronicDisease.includes('เบาหวาน')) {
+          if (['ไอศกรีม', 'ไอศครีม', 'ของหวาน', 'บัวลอย', 'น้ำหวาน', 'ชาไทย', 'โกโก้', 'เค้ก', 'ขนม', 'สังขยา', 'ลอดช่อง', 'เฉาก๊วย', 'ทองหยอด', 'ฝอยทอง', 'น้ำอัดลม'].some(kw => name.includes(kw))) return false;
+        }
+        if (chronicDisease.includes('ความดันโลหิตสูง') || chronicDisease.includes('โรคไต')) {
+          if (['ต้มยำ', 'ส้มตำ', 'ยำ', 'น้ำตก', 'น้ำพริก', 'ดอง', 'ต้มแซ่บ', 'หมูกรอบ', 'ปลาเค็ม'].some(kw => name.includes(kw))) return false;
+        }
+        if (chronicDisease.includes('ไขมันในเลือดสูง') || chronicDisease.includes('โรคหัวใจ')) {
+          if (['ทอด', 'ขาหมู', 'ข้าวมันไก่', 'หมูกรอบ', 'แคบหมู', 'ผัดซีอิ๊ว', 'หอยทอด', 'หนังไก่', 'ชีส'].some(kw => name.includes(kw))) return false;
+        }
+
         return true;
       });
 
@@ -322,6 +322,12 @@ async function handleEvent(event) {
       };
       return client.replyMessage({ replyToken: event.replyToken, messages: [flexMenuCard] });
     }
+
+    // 5️⃣ ฟีเจอร์อัปเดตน้ำหนักและส่วนสูง
+    if (isUpdateBodyTrigger) {
+      await updateState(userId, 'UPDATE_WEIGHT', {});
+      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚖️ มาอัปเดตน้ำหนักและส่วนสูงกันครับ!\n\nตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
+    }
   }
 
   // ==========================================
@@ -333,11 +339,6 @@ async function handleEvent(event) {
     case 'MISSION_ACTION':
       const todayStr = new Date().toISOString().split('T')[0];
       
-      if (userMessage === 'อัปเดตน้ำหนักส่วนสูง') {
-        await updateState(userId, 'UPDATE_WEIGHT', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '⚖️ มาอัปเดตน้ำหนักประจำสัปดาห์กันครับ! ตอนนี้น้ำหนักกี่กิโลกรัมครับ? (พิมพ์ตัวเลข เช่น 52.5)' }] });
-      }
-
       if (userMessage === 'ระบุปริมาณน้ำ') {
         await updateState(userId, 'INPUT_WATER', {});
         return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💧 พิมพ์ปริมาณน้ำที่คุณดื่มลงไปได้เลยครับ (เป็นตัวเลข มล. เช่น 330)' }] });
@@ -376,6 +377,7 @@ async function handleEvent(event) {
       }
       break;
 
+    // โหมดอัปเดตน้ำหนักส่วนสูง
     case 'UPDATE_WEIGHT':
       const newW = parseFloat(userMessage);
       if (isNaN(newW) || newW <= 0) return replyErr(event, 'โปรดระบุน้ำหนักเป็นตัวเลขครับ');
@@ -388,15 +390,15 @@ async function handleEvent(event) {
       if (isNaN(newH) || newH <= 0) return replyErr(event, 'โปรดระบุส่วนสูงเป็นตัวเลขครับ');
 
       await saveUserProfile(
-        userId, profile.gender, profile.age, profile.user_type,
-        profile.chronic_disease, profile.dietary_restriction,
-        profile.lifestyle, currentContext.weight, newH
+        userId, profile?.gender || 'ชาย', profile?.age || 16, profile?.user_type || 'บุคคลทั่วไป',
+        profile?.chronic_disease || 'ไม่มี', profile?.dietary_restriction || 'ไม่มี',
+        profile?.lifestyle || 'นั่งทำงานทั่วไป', currentContext.weight, newH
       );
 
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({
         replyToken: event.replyToken,
-        messages: [{ type: 'text', text: `🎉 อัปเดตสัดส่วนเรียบร้อยครับ!\n• น้ำหนัก: ${currentContext.weight} kg\n• ส่วนสูง: ${newH} cm\n\nระบบปรับคำนวณเป้าหมายสุขภาพให้คุณเรียบร้อยครับ ✨` }]
+        messages: [{ type: 'text', text: `🎉 อัปเดตสัดส่วนเรียบร้อยครับ!\n• น้ำหนัก: ${currentContext.weight} kg\n• ส่วนสูง: ${newH} cm\n\nระบบปรับคำนวณเป้าหมาย BMI, BMR และ TDEE ให้คุณใหม่เรียบร้อยครับ ✨` }]
       });
 
     case 'INPUT_WATER':
@@ -491,7 +493,8 @@ async function handleEvent(event) {
               { type: "button", style: "primary", color: "#0284C7", margin: "sm", action: { type: "message", label: "🌙 อิสลาม / ฮาลาล", text: "อิสลาม/ฮาลาล" } },
               { type: "button", style: "primary", color: "#10B981", margin: "sm", action: { type: "message", label: "🌱 มังสวิรัติ / วีแกน", text: "มังสวิรัติ/วีแกน" } },
               { type: "button", style: "primary", color: "#D97706", margin: "sm", action: { type: "message", label: "🦐 แพ้อาหารทะเล", text: "แพ้อาหารทะเล" } },
-              { type: "button", style: "primary", color: "#B45309", margin: "sm", action: { type: "message", label: "🥜 แพ้ถั่วชนิดต่างๆ", text: "แพ้ถั่ว" } },
+              { type: "button", style: "primary", color: "#B45309", margin: "sm", action: { type: "message", label: "🥚 แพ้ไข่", text: "แพ้ไข่" } },
+              { type: "button", style: "primary", color: "#7C3AED", margin: "sm", action: { type: "message", label: "🥜 แพ้ถั่วชนิดต่างๆ", text: "แพ้ถั่ว" } },
               { type: "button", style: "primary", color: "#4B5563", margin: "sm", action: { type: "message", label: "🥛 แพ้นม / แลกโตส", text: "แพ้นม/แลกโตส" } }
             ]
           }
@@ -564,7 +567,7 @@ async function handleEvent(event) {
       await updateState(userId, 'MAIN_MENU', {});
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกเรียบร้อยครับ ✨\n\n` + mainMenuText }] });
 
-    // 🔍 ค้นหาโภชนาการ (ไม่เด้งหลุดไปหน้าหลักเมื่อพิมพ์คำผิด/ไม่พบเมนู)
+    // 🔍 ค้นหาโภชนาการ
     case 'SEARCH_NUTRIENT':
       try {
         let searchKey = userMessage.trim();
@@ -647,7 +650,6 @@ async function handleEvent(event) {
             }] 
           });
         } else {
-          // 💡 คงสถานะ SEARCH_NUTRIENT ไว้ ผู้ใช้พิมพ์ค้นใหม่ได้เลยทันที
           return client.replyMessage({ 
             replyToken: event.replyToken, 
             messages: [{ type: 'text', text: `❌ ไม่พบเมนูที่ชื่อ "${searchKey}" ครับ\n\n🔍 ลองพิมพ์ค้นหาด้วยคำสั้นๆ หรือชื่อเมนูอื่นได้เลยครับ!\n(หรือพิมพ์ "เมนูหลัก" เพื่อกลับหน้าหลัก)` }] 
@@ -661,10 +663,10 @@ async function handleEvent(event) {
         });
       }
 
-    // แบบทดสอบสุขภาพจิต
+    // 🧠 แบบทดสอบสุขภาพจิต
     case 'MONTHLY_MENTAL':
-      const validScores = ['0', '1', '2', '3'];
-      if (!validScores.includes(userMessage)) return replyErr(event, 'เลือกกดจากปุ่มได้เลยครับ');
+      const validMentalScores = ['0', '1', '2', '3'];
+      if (!validMentalScores.includes(userMessage)) return replyErr(event, 'เลือกกดจากปุ่มได้เลยครับ');
 
       const qIdx = currentContext.current_q;
       currentContext.scores[qIdx] = parseInt(userMessage);
@@ -707,10 +709,7 @@ async function handleEvent(event) {
 
         return client.replyMessage({
           replyToken: event.replyToken,
-          messages: [
-            mentalResultCard,
-            { type: 'text', text: mainMenuText }
-          ]
+          messages: [mentalResultCard, { type: 'text', text: mainMenuText }]
         });
       }
   }
@@ -814,5 +813,5 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
 }
 
 app.listen(process.env.PORT || 3000, () => {
-  console.log('Server running with persistent search state & optimized performance!');
+  console.log('Server running!');
 });

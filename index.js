@@ -27,7 +27,6 @@ const COLORS = {
   WHITE: "#FFFFFF"
 };
 
-// 🧠 รายการคำถามแบบทดสอบสุขภาพจิตคนไทย (TMHI-55)
 const MENTAL_QUESTIONS = [
   { id: 1, text: "1. ท่านรู้สึกพึงพอใจในชีวิต", reverse: false },
   { id: 2, text: "2. ท่านรู้สึกสบายใจ", reverse: false },
@@ -88,43 +87,30 @@ const MENTAL_QUESTIONS = [
 
 const NEGATIVE_KEYWORDS = ['เครียด', 'เหนื่อย', 'ท้อ', 'แย่', 'เศร้า', 'กังวล', 'ไม่ไหว', 'เจ็บ', 'ปวด', 'นอนไม่หลับ', 'เบื่อ'];
 
-// ==========================================
-// 🛠️ HELPER: ระบบขยายคำค้นหาแบบอัจฉริยะ (Smart Query Expansion)
-// ==========================================
 function buildSmartSearchTerms(userInput) {
   const cleanInput = userInput.trim();
   let terms = [cleanInput];
 
-  // 1. กรณีผู้ใช้พิมพ์เว้นวรรค เช่น "Chicken Dozo" -> เพิ่ม "chickendozo"
   const noSpace = cleanInput.replace(/\s+/g, '');
-  if (noSpace !== cleanInput) {
-    terms.push(noSpace);
-  }
+  if (noSpace !== cleanInput) terms.push(noSpace);
 
-  // 2. กรณีแมปคำภาษาไทยถอดเสียงเป็นภาษาอังกฤษสำหรับร้าน chickendozo
   if (/ชิคเก้น|โดโซ|chickendozo|chicken dozo/i.test(cleanInput)) {
     terms.push('chickendozo');
   }
 
-  // 3. กรณีพิมพ์เฉพาะตัวเลข เช่น "2", "4", "9"
   if (/^\d+$/.test(cleanInput)) {
     terms.push(`ร้านที่ ${cleanInput}`);
     terms.push(`ร้านที่${cleanInput}`);
   }
 
-  // 4. กรณีพิมพ์คำว่า "ร้าน..." หรือ ตัดคำว่า "ร้าน" ออก
   if (cleanInput.startsWith('ร้าน')) {
     const withoutRan = cleanInput.replace(/^ร้าน/, '').trim();
     if (withoutRan) terms.push(withoutRan);
   }
 
-  // ตัดคำซ้ำออก
   return [...new Set(terms)];
 }
 
-// ==========================================
-// ⏰ PERSONALIZED NOTIFICATION SCHEDULER
-// ==========================================
 async function broadcastPersonalizedNotification(timeOfDay) {
   try {
     const { data: users, error } = await supabase.from('user_profiles').select('user_id');
@@ -258,7 +244,7 @@ async function handleEvent(event) {
 
   const isAnsweringTest = currentState === 'MONTHLY_MENTAL' && ['0', '1', '2', '3'].includes(userMessage);
 
-  if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger || isUpdateBodyTrigger) && !isAnsweringTest && currentState !== 'MAIN_MENU') {
+  if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger || isUpdateBodyTrigger) && !isAnsweringTest && currentState !== 'MAIN_MENU' && !userMessage.startsWith('ค้นหาเพิ่ม:')) {
     currentState = 'MAIN_MENU';
     currentContext = {};
   }
@@ -375,34 +361,55 @@ async function handleEvent(event) {
   // ==========================================
   switch (currentState) {
     
-    // 🔍 ⚡ ค้นหาโภชนาการ + ร้านค้า (พร้อมระบบ Smart Search คำนึงถึงการพิมพ์ผิด/ย่อ)
+    // 🔍 ⚡ ค้นหาโภชนาการ + ร้านค้า (ปรับปรุงโภชนาการครบ 4 อย่าง + ค้นหาเพิ่ม)
     case 'SEARCH_NUTRIENT':
-      const searchTerms = buildSmartSearchTerms(userMessage);
+      let searchKeyword = userMessage;
+      let page = 0;
+      const pageSize = 5;
 
-      // สร้างเงื่อนไขค้นหาหลายคำพร้อมกันใน Supabase (.or)
+      // ตรวจสอบว่าเป็นคำสั่งกดหาเพิ่มหรือไม่ (เช่น "ค้นหาเพิ่ม:ไก่:1")
+      if (userMessage.startsWith('ค้นหาเพิ่ม:')) {
+        const parts = userMessage.split(':');
+        searchKeyword = parts[1] || '';
+        page = parseInt(parts[2]) || 0;
+      }
+
+      const searchTerms = buildSmartSearchTerms(searchKeyword);
       const orConditions = searchTerms.flatMap(term => [
         `menu_name.ilike.%${term}%`,
         `shop_name.ilike.%${term}%`
       ]).join(',');
 
-      const { data: searchResults, error: searchError } = await supabase
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      // ดึงข้อมูลแบบกำหนด Range เพื่อทำ Pagination (ค้นหาเพิ่ม)
+      const { data: searchResults, error: searchError, count } = await supabase
         .from('canteen_menus')
-        .select('*')
+        .select('*', { count: 'exact' })
         .or(orConditions)
-        .limit(5);
+        .range(from, to);
 
       if (searchError || !searchResults || searchResults.length === 0) {
         return client.replyMessage({
           replyToken: event.replyToken,
           messages: [{
             type: 'text',
-            text: `❌ ไม่พบข้อมูลของ "${userMessage}" ครับ\n\n💡 ลองพิมพ์ค้นหาด้วยชื่อเมนูหรือชื่อร้าน เช่น "รุ่งเรือง", "ไก่ทอด", "KFC", "ร้านที่ 2" หรือพิมพ์ "กลับหน้าหลัก" เพื่อยกเลิกครับ`
+            text: `❌ ไม่พบข้อมูลของ "${searchKeyword}" ครับ\n\n💡 ลองพิมพ์ค้นหาด้วยชื่อเมนูหรือชื่อร้าน เช่น "รุ่งเรือง", "ไก่ทอด", "KFC", "ร้านที่ 2" หรือพิมพ์ "กลับหน้าหลัก" เพื่อยกเลิกครับ`
           }]
         });
       }
 
+      // สร้างกล่องแสดงผลข้อมูลโภชนาการแบบสมบูรณ์ (Cal, Protein, Fat, Carbs)
       const resultContents = searchResults.map((item) => {
         const shopText = item.shop_name ? ` (${item.shop_name})` : '';
+        
+        // 🛠️ Fallback อ่านค่าโภชนาการจากคอลัมน์ Supabase แบบครอบคลุม
+        const calories = item.calories ?? item.cal ?? 0;
+        const protein = item.protein ?? item.protein_g ?? item.protein_gram ?? 0;
+        const fat = item.fat ?? item.fat_g ?? item.fat_gram ?? 0;
+        const carbs = item.carbs ?? item.carb ?? item.carbohydrates ?? item.carbs_g ?? 0;
+
         return {
           type: "box", layout: "vertical", margin: "md",
           contents: [
@@ -410,32 +417,69 @@ async function handleEvent(event) {
             {
               type: "box", layout: "horizontal", margin: "xs",
               contents: [
-                { type: "text", text: `🔥 พลังงาน: ${item.calories || 0} kcal`, size: "xs", color: COLORS.PRIMARY, weight: "bold" },
-                { type: "text", text: `🥩 โปรตีน: ${item.protein_g || 0}g`, size: "xs", color: "#6B7280", align: "end" }
+                { type: "text", text: `🔥 ${calories} kcal`, size: "xs", color: COLORS.PRIMARY, weight: "bold", flex: 3 },
+                { type: "text", text: `🥩 โปรตีน: ${protein}g`, size: "xs", color: "#4B5563", flex: 3 }
+              ]
+            },
+            {
+              type: "box", layout: "horizontal", margin: "none",
+              contents: [
+                { type: "text", text: `🥑 ไขมัน: ${fat}g`, size: "xs", color: "#4B5563", flex: 3 },
+                { type: "text", text: `🍚 คาร์บ: ${carbs}g`, size: "xs", color: "#4B5563", flex: 3 }
               ]
             }
           ]
         };
       });
 
+      // ตรวจสอบว่ายังมีรายการเหลือในฐานข้อมูลสำหรับกด "ค้นหาเพิ่ม" หรือไม่
+      const hasMore = count > (page + 1) * pageSize;
+      let footerContents = [];
+
+      if (hasMore) {
+        footerContents.push({
+          type: "button",
+          style: "primary",
+          color: COLORS.SECONDARY,
+          margin: "xs",
+          action: {
+            type: "message",
+            label: `🔄 ดูรายการเพิ่มเติม (${(page + 1) * pageSize}/${count})`,
+            text: `ค้นหาเพิ่ม:${searchKeyword}:${page + 1}`
+          }
+        });
+      }
+
+      footerContents.push({
+        type: "text",
+        text: "💡 พิมพ์ชื่อเมนู/ร้านอื่นต่อ หรือพิมพ์ 'กลับหน้าหลัก' ได้ครับ",
+        size: "xs",
+        color: "#9CA3AF",
+        margin: "md",
+        wrap: true,
+        align: "center"
+      });
+
       const searchCard = {
-        type: "flex", altText: `ผลการค้นหา: ${userMessage}`,
+        type: "flex", altText: `ผลการค้นหา: ${searchKeyword}`,
         contents: {
           type: "bubble",
           header: {
             type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
               { type: "text", text: "🔍 ผลการค้นหาโภชนาการ", color: COLORS.WHITE, weight: "bold", size: "md" },
-              { type: "text", text: `คำค้นหา: "${userMessage}"`, color: "#CCFBF1", size: "xs", margin: "xs" }
+              { type: "text", text: `คำค้นหา: "${searchKeyword}" (หน้า ${page + 1})`, color: "#CCFBF1", size: "xs", margin: "xs" }
             ]
           },
           body: {
             type: "box", layout: "vertical",
             contents: [
-              ...resultContents,
-              { type: "separator", margin: "md" },
-              { type: "text", text: "💡 สามารถพิมพ์ค้นหาเมนูหรือชื่อร้านอื่นต่อได้เลย หรือพิมพ์ 'กลับหน้าหลัก' ครับ", size: "xs", color: "#9CA3AF", margin: "md", wrap: true }
+              ...resultContents
             ]
+          },
+          footer: {
+            type: "box", layout: "vertical",
+            contents: footerContents
           }
         }
       };

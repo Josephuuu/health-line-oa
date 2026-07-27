@@ -27,7 +27,7 @@ const COLORS = {
   WHITE: "#FFFFFF"
 };
 
-// 🧠 รายการคำถามแบบทดสอบสุขภาพจิตคนไทย (TMHI-55) ครบทั้ง 55 ข้อ
+// 🧠 รายการคำถามแบบทดสอบสุขภาพจิตคนไทย (TMHI-55)
 const MENTAL_QUESTIONS = [
   { id: 1, text: "1. ท่านรู้สึกพึงพอใจในชีวิต", reverse: false },
   { id: 2, text: "2. ท่านรู้สึกสบายใจ", reverse: false },
@@ -89,6 +89,40 @@ const MENTAL_QUESTIONS = [
 const NEGATIVE_KEYWORDS = ['เครียด', 'เหนื่อย', 'ท้อ', 'แย่', 'เศร้า', 'กังวล', 'ไม่ไหว', 'เจ็บ', 'ปวด', 'นอนไม่หลับ', 'เบื่อ'];
 
 // ==========================================
+// 🛠️ HELPER: ระบบขยายคำค้นหาแบบอัจฉริยะ (Smart Query Expansion)
+// ==========================================
+function buildSmartSearchTerms(userInput) {
+  const cleanInput = userInput.trim();
+  let terms = [cleanInput];
+
+  // 1. กรณีผู้ใช้พิมพ์เว้นวรรค เช่น "Chicken Dozo" -> เพิ่ม "chickendozo"
+  const noSpace = cleanInput.replace(/\s+/g, '');
+  if (noSpace !== cleanInput) {
+    terms.push(noSpace);
+  }
+
+  // 2. กรณีแมปคำภาษาไทยถอดเสียงเป็นภาษาอังกฤษสำหรับร้าน chickendozo
+  if (/ชิคเก้น|โดโซ|chickendozo|chicken dozo/i.test(cleanInput)) {
+    terms.push('chickendozo');
+  }
+
+  // 3. กรณีพิมพ์เฉพาะตัวเลข เช่น "2", "4", "9"
+  if (/^\d+$/.test(cleanInput)) {
+    terms.push(`ร้านที่ ${cleanInput}`);
+    terms.push(`ร้านที่${cleanInput}`);
+  }
+
+  // 4. กรณีพิมพ์คำว่า "ร้าน..." หรือ ตัดคำว่า "ร้าน" ออก
+  if (cleanInput.startsWith('ร้าน')) {
+    const withoutRan = cleanInput.replace(/^ร้าน/, '').trim();
+    if (withoutRan) terms.push(withoutRan);
+  }
+
+  // ตัดคำซ้ำออก
+  return [...new Set(terms)];
+}
+
+// ==========================================
 // ⏰ PERSONALIZED NOTIFICATION SCHEDULER
 // ==========================================
 async function broadcastPersonalizedNotification(timeOfDay) {
@@ -109,7 +143,7 @@ async function broadcastPersonalizedNotification(timeOfDay) {
       const symptomText = progressRes.data?.symptoms_today || '';
 
       const isNegativeMood = NEGATIVE_KEYWORDS.some(kw => moodText.includes(kw) || symptomText.includes(kw));
-      const isHighStress = mentalScore < 110 && mentalScore > 0; // คะแนนสุขภาพจิตอยู่ในเกณฑ์ต่ำ
+      const isHighStress = mentalScore < 110 && mentalScore > 0;
 
       let pushText = '';
 
@@ -123,7 +157,7 @@ async function broadcastPersonalizedNotification(timeOfDay) {
       } else if (timeOfDay === 'AFTERNOON') {
         pushText = '☀️ พักสายตา ยืดเส้นยืดสายกันหน่อยครับ! 🧘‍♂️\n\nขยับร่างกายสัก 1-2 นาที จิบน้ำเติมพลังกันนะ';
         if (isNegativeMood || isHighStress) {
-          pushText += '\n\n🤗 ถ้ารู้สึกเหนื่อยหรือเครียด ลองสูดหายใจลึกๆ 3 วิ แล้วผ่อนคลายไหล่ดูนะครับ คุณทำดีที่สุดแล้ว!';
+          pushText += '\n\n🤗 ถ้ารู้สึกเหนื่อยหรือเครียด ลองสูดหายใจลึกๆ 3 วินาที แล้วผ่อนคลายไหล่ดูนะครับ คุณทำดีที่สุดแล้ว!';
         }
       } else if (timeOfDay === 'EVENING') {
         pushText = '🌆 โค้งสุดท้ายของวันแล้วครับ! 🎯\n\nวันนี้ดื่มน้ำ เดินสะสม หรือยืดตัวครบเป้าหมายหรือยังครับ?';
@@ -199,12 +233,12 @@ async function handleEvent(event) {
   }
 
   const mainMenuText = `📌 เมนูหลักระบบดูแลสุขภาพ:\n\n` +
-                       `1️⃣ [คำนวณแคลอรี่และโภชนาการ] (พิมพ์ 1)\n` +
-                       `2️⃣ [ภารกิจสุขภาพประจำวัน] (พิมพ์ 2)\n` +
-                       `3️⃣ [แบบทดสอบสุขภาพจิต 55 ข้อ] (พิมพ์ 3)\n` +
-                       `4️⃣ [แนะนำอาหารลดน้ำหนัก] (พิมพ์ 4)\n` +
-                       `5️⃣ [อัปเดตสัดส่วน & โรคประจำตัว] (พิมพ์ 5)\n` +
-                       `6️⃣ [ประเมินความพึงพอใจ] (กดปุ่มบน Rich Menu)\n\n` +
+                       `1️⃣ [คำนวณแคลอรี่และโภชนาการ]\n` +
+                       `2️⃣ [ภารกิจสุขภาพประจำวัน]\n` +
+                       `3️⃣ [แบบทดสอบสุขภาพจิต 55 ข้อ]\n` +
+                       `4️⃣ [แนะนำอาหารลดน้ำหนัก]\n` +
+                       `5️⃣ [อัปเดตสัดส่วน & โรคประจำตัว]\n` +
+                       `6️⃣ [ประเมินความพึงพอใจ]\n\n` +
                        `👉 กดปุ่มบน Rich Menu หรือพิมพ์ตัวเลข 1-5 ได้เลยครับ!`;
 
   if (userMessage === 'กลับหน้าหลัก' || userMessage === 'เมนูหลัก' || userMessage === 'เมนู') {
@@ -212,11 +246,11 @@ async function handleEvent(event) {
     return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: mainMenuText }] });
   }
 
-  const isSearchTrigger = userMessage === '1' || userMessage.includes('คำนวณแคลอรี่') || userMessage.includes('โภชนาการ') || userMessage.includes('ค้นหาอาหาร');
-  const isMissionTrigger = userMessage === '2' || userMessage.includes('ภารกิจ') || userMessage.includes('บันทึกประจำวัน');
-  const isMentalTrigger = userMessage === '3' || userMessage.includes('สุขภาพจิต') || userMessage.includes('ประเมินสุขภาพจิต') || userMessage.includes('แบบทดสอบสุขภาพจิต');
-  const isFoodTrigger = userMessage === '4' || userMessage.includes('แนะนำอาหาร') || userMessage.includes('อาหารลดน้ำหนัก');
-  const isUpdateBodyTrigger = userMessage === '5' || userMessage.includes('อัปเดตน้ำหนัก') || userMessage.includes('น้ำหนักส่วนสูง') || userMessage.includes('อัปเดตสัดส่วน');
+  const isSearchTrigger = userMessage === '1' || /คำน?วณ|แคล|โภชนาการ|ค้นหาอาหาร/i.test(userMessage);
+  const isMissionTrigger = userMessage === '2' || /ภารกิ[จต]|บันทึกประจำวัน/i.test(userMessage);
+  const isMentalTrigger = userMessage === '3' || /สุข?ภาพจิต|ประเมินสุขภาพจิต|แบบทดสอบ/i.test(userMessage);
+  const isFoodTrigger = userMessage === '4' || /แนะนำอาหาร|ลดน้ำหนัก|ลดความอ้วน/i.test(userMessage);
+  const isUpdateBodyTrigger = userMessage === '5' || /อั[ปพ]เด[ตท]|สัดส่วน|อัปเดตสัดส่วน/i.test(userMessage);
 
   if (userMessage === '6') {
     return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '📋 สำหรับการประเมินความพึงพอใจ สามารถกดปุ่มที่ 6 บน LINE Rich Menu เพื่อทำผ่าน Google Form ได้เลยครับ! 🙏' }] });
@@ -235,8 +269,11 @@ async function handleEvent(event) {
   if (currentState === 'MAIN_MENU') {
     
     if (isSearchTrigger) {
-      await updateState(userId, 'SEARCH_NUTRIENT', { offset: 0 });
-      return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหารในโรงเรียนที่ต้องการค้นหาได้เลยครับ (เช่น ไก่, ข้าวผัด, กะเพรา)' }] });
+      await updateState(userId, 'SEARCH_NUTRIENT', {});
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: '🔍 พิมพ์ชื่อเมนูอาหาร หรือ ชื่อร้านค้า ที่ต้องการค้นหาได้เลยครับ\n(เช่น ไก่, รุ่งเรือง, ร้านที่ 2, KFC, chickendozo)' }]
+      });
     }
 
     if (isMissionTrigger) {
@@ -284,13 +321,17 @@ async function handleEvent(event) {
       const poolToUse = foodOnly.length >= 3 ? foodOnly : (fitMenus.length > 0 ? fitMenus : allMenus);
 
       const randomSelected = poolToUse.sort(() => 0.5 - Math.random()).slice(0, 3);
-      const menuContents = randomSelected.map((item, idx) => ({
-        type: "box", layout: "horizontal", margin: "md",
-        contents: [
-          { type: "text", text: `${idx + 1}. ${item.menu_name}`, size: "sm", color: COLORS.NEUTRAL_DARK, flex: 4, weight: "bold" },
-          { type: "text", text: `${item.calories} kcal`, size: "sm", color: COLORS.PRIMARY, align: "end", flex: 2, weight: "bold" }
-        ]
-      }));
+      
+      const menuContents = randomSelected.map((item, idx) => {
+        const shopText = item.shop_name ? ` (${item.shop_name})` : '';
+        return {
+          type: "box", layout: "horizontal", margin: "md",
+          contents: [
+            { type: "text", text: `${idx + 1}. ${item.menu_name}${shopText}`, size: "sm", color: COLORS.NEUTRAL_DARK, flex: 4, weight: "bold", wrap: true },
+            { type: "text", text: `${item.calories} kcal`, size: "sm", color: COLORS.PRIMARY, align: "end", flex: 2, weight: "bold" }
+          ]
+        };
+      });
 
       const flexMenuCard = {
         type: "flex", altText: "🥗 เมนูอาหารแนะนำลดน้ำหนัก",
@@ -334,12 +375,79 @@ async function handleEvent(event) {
   // ==========================================
   switch (currentState) {
     
+    // 🔍 ⚡ ค้นหาโภชนาการ + ร้านค้า (พร้อมระบบ Smart Search คำนึงถึงการพิมพ์ผิด/ย่อ)
+    case 'SEARCH_NUTRIENT':
+      const searchTerms = buildSmartSearchTerms(userMessage);
+
+      // สร้างเงื่อนไขค้นหาหลายคำพร้อมกันใน Supabase (.or)
+      const orConditions = searchTerms.flatMap(term => [
+        `menu_name.ilike.%${term}%`,
+        `shop_name.ilike.%${term}%`
+      ]).join(',');
+
+      const { data: searchResults, error: searchError } = await supabase
+        .from('canteen_menus')
+        .select('*')
+        .or(orConditions)
+        .limit(5);
+
+      if (searchError || !searchResults || searchResults.length === 0) {
+        return client.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{
+            type: 'text',
+            text: `❌ ไม่พบข้อมูลของ "${userMessage}" ครับ\n\n💡 ลองพิมพ์ค้นหาด้วยชื่อเมนูหรือชื่อร้าน เช่น "รุ่งเรือง", "ไก่ทอด", "KFC", "ร้านที่ 2" หรือพิมพ์ "กลับหน้าหลัก" เพื่อยกเลิกครับ`
+          }]
+        });
+      }
+
+      const resultContents = searchResults.map((item) => {
+        const shopText = item.shop_name ? ` (${item.shop_name})` : '';
+        return {
+          type: "box", layout: "vertical", margin: "md",
+          contents: [
+            { type: "text", text: `🍛 ${item.menu_name}${shopText}`, weight: "bold", size: "sm", color: COLORS.NEUTRAL_DARK, wrap: true },
+            {
+              type: "box", layout: "horizontal", margin: "xs",
+              contents: [
+                { type: "text", text: `🔥 พลังงาน: ${item.calories || 0} kcal`, size: "xs", color: COLORS.PRIMARY, weight: "bold" },
+                { type: "text", text: `🥩 โปรตีน: ${item.protein_g || 0}g`, size: "xs", color: "#6B7280", align: "end" }
+              ]
+            }
+          ]
+        };
+      });
+
+      const searchCard = {
+        type: "flex", altText: `ผลการค้นหา: ${userMessage}`,
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
+            contents: [
+              { type: "text", text: "🔍 ผลการค้นหาโภชนาการ", color: COLORS.WHITE, weight: "bold", size: "md" },
+              { type: "text", text: `คำค้นหา: "${userMessage}"`, color: "#CCFBF1", size: "xs", margin: "xs" }
+            ]
+          },
+          body: {
+            type: "box", layout: "vertical",
+            contents: [
+              ...resultContents,
+              { type: "separator", margin: "md" },
+              { type: "text", text: "💡 สามารถพิมพ์ค้นหาเมนูหรือชื่อร้านอื่นต่อได้เลย หรือพิมพ์ 'กลับหน้าหลัก' ครับ", size: "xs", color: "#9CA3AF", margin: "md", wrap: true }
+            ]
+          }
+        }
+      };
+
+      return client.replyMessage({ replyToken: event.replyToken, messages: [searchCard] });
+
     case 'MISSION_ACTION':
       const todayStr = new Date().toISOString().split('T')[0];
 
       if (userMessage === 'ระบุปริมาณน้ำ') {
         await updateState(userId, 'INPUT_WATER', {});
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💧 พิมพ์ปริมาณน้ำที่คุณดื่มลงไปได้เลยครับ (เป็นตัวเลข มล. เช่น 330)' }] });
+        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '💧 พิมพ์ปริมาณน้ำที่คุณดื่มลงไปได้เลยครับ (เป็นตัวเลข มิลลิลิตร เช่น 330)' }] });
       }
 
       if (userMessage.startsWith('บันทึกน้ำ') || userMessage.startsWith('น้ำ ')) {
@@ -474,7 +582,6 @@ async function handleEvent(event) {
         messages: [{ type: 'text', text: `👟 บันทึกก้าวเดินวันนี้: ${steps} ก้าว เรียบร้อยครับ! ✨` }, updatedCardS]
       });
 
-    // 🧠 ระบบคำนวณคะแนนแบบทดสอบสุขภาพจิตคนไทย (TMHI-55) แบบ Reverse Scoring
     case 'MONTHLY_MENTAL':
       const validMentalScores = ['0', '1', '2', '3'];
       if (!validMentalScores.includes(userMessage)) return replyErr(event, 'เลือกกดจากปุ่มได้เลยครับ');
@@ -488,18 +595,16 @@ async function handleEvent(event) {
         await updateState(userId, 'MONTHLY_MENTAL', currentContext);
         return sendMentalQuestion(event, nextIdx, '');
       } else {
-        // คำนวณคะแนนรวมตามหลักการ TMHI-55 (ข้อคำถามเชิงลบ จะคำนวณคะแนนย้อนกลับ)
         let totalScore = 0;
         MENTAL_QUESTIONS.forEach(q => {
           const rawScore = currentContext.scores[q.id] || 0;
           if (q.reverse) {
-            totalScore += (3 - rawScore); // คำนวณคะแนนย้อนกลับ
+            totalScore += (3 - rawScore);
           } else {
             totalScore += rawScore;
           }
         });
 
-        // เกณฑ์ประเมินดัชนีสุขภาพจิตคนไทย (TMHI-55)
         let mentalResult = "";
         if (totalScore >= 135) {
           mentalResult = "💚 สุขภาพจิตดีกว่าคนทั่วไป (เยี่ยมมากครับ! มีความสุขและจัดการอารมณ์ได้ดีเยี่ยม)";
@@ -640,9 +745,6 @@ async function handleEvent(event) {
       await updateState(userId, 'MISSION_ACTION', {});
       const updatedCardM = await buildMissionCard(userId, profile);
       return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `รับทราบครับ! บันทึกความรู้สึกเรียบร้อยครับ ✨` }, updatedCardM] });
-
-    case 'SEARCH_NUTRIENT':
-      break;
   }
 
   if (currentState === 'MAIN_MENU') {

@@ -364,14 +364,11 @@ async function handleEvent(event) {
     // 🔍 ⚡ ค้นหาโภชนาการ + ร้านค้า (ปรับปรุงโภชนาการครบ 4 อย่าง + ค้นหาเพิ่ม)
     case 'SEARCH_NUTRIENT':
       let searchKeyword = userMessage;
-      let page = 0;
-      const pageSize = 5;
 
-      // ตรวจสอบว่าเป็นคำสั่งกดหาเพิ่มหรือไม่ (เช่น "ค้นหาเพิ่ม:ไก่:1")
+      // ตรวจสอบว่าเป็นคำสั่งกดสุ่มใหม่/ค้นเพิ่มหรือไม่
       if (userMessage.startsWith('ค้นหาเพิ่ม:')) {
         const parts = userMessage.split(':');
         searchKeyword = parts[1] || '';
-        page = parseInt(parts[2]) || 0;
       }
 
       const searchTerms = buildSmartSearchTerms(searchKeyword);
@@ -380,17 +377,14 @@ async function handleEvent(event) {
         `shop_name.ilike.%${term}%`
       ]).join(',');
 
-      const from = page * pageSize;
-      const to = from + pageSize - 1;
-
-      // ดึงข้อมูลแบบกำหนด Range เพื่อทำ Pagination (ค้นหาเพิ่ม)
-      const { data: searchResults, error: searchError, count } = await supabase
+      // ดึงรายการที่ตรงคำค้นหามาสัก 50 รายการแรกเพื่อเอามาคละร้าน
+      const { data: rawResults, error: searchError } = await supabase
         .from('canteen_menus')
-        .select('*', { count: 'exact' })
+        .select('*')
         .or(orConditions)
-        .range(from, to);
+        .limit(50);
 
-      if (searchError || !searchResults || searchResults.length === 0) {
+      if (searchError || !rawResults || rawResults.length === 0) {
         return client.replyMessage({
           replyToken: event.replyToken,
           messages: [{
@@ -400,15 +394,35 @@ async function handleEvent(event) {
         });
       }
 
-      // สร้างกล่องแสดงผลข้อมูลโภชนาการแบบสมบูรณ์ (Cal, Protein, Fat, Carbs)
+      // 🎯 1. จัดกลุ่มเมนูแยกตามชื่อร้านค้า
+      const groupedByShop = {};
+      rawResults.forEach(item => {
+        const shop = item.shop_name || 'ร้านค้าทั่วไป';
+        if (!groupedByShop[shop]) groupedByShop[shop] = [];
+        groupedByShop[shop].push(item);
+      });
+
+      // 🎯 2. สุ่มดึงเมนูจากแต่ละร้าน ร้านละไม่เกิน 1-2 รายการ
+      let pickedItems = [];
+      Object.keys(groupedByShop).forEach(shopName => {
+        // สุ่มลำดับเมนูภายในร้านนี้
+        const shuffledShopItems = groupedByShop[shopName].sort(() => 0.5 - Math.random());
+        // เอามาแค่ 1-2 รายการต่อร้าน
+        pickedItems.push(...shuffledShopItems.slice(0, 2));
+      });
+
+      // 🎯 3. สุ่มสลับลำดับผลลัพธ์รวม แล้วเลือกมาแสดงผล 5 รายการ
+      const searchResults = pickedItems.sort(() => 0.5 - Math.random()).slice(0, 5);
+
+      // สร้างกล่องแสดงผล Flex Message
       const resultContents = searchResults.map((item) => {
         const shopText = item.shop_name ? ` (${item.shop_name})` : '';
         
-        // 🛠️ Fallback อ่านค่าโภชนาการจากคอลัมน์ Supabase แบบครอบคลุม
+        // ดึงค่าโภชนาการตรงตามคอลัมน์ Supabase ของคุณ (protein, fat, carbs)
         const calories = item.calories ?? item.cal ?? 0;
-        const protein = item.protein ?? item.protein_g ?? item.protein_gram ?? 0;
-        const fat = item.fat ?? item.fat_g ?? item.fat_gram ?? 0;
-        const carbs = item.carbs ?? item.carb ?? item.carbohydrates ?? item.carbs_g ?? 0;
+        const protein = item.protein ?? 0;
+        const fat = item.fat ?? 0;
+        const carbs = item.carbs ?? 0;
 
         return {
           type: "box", layout: "vertical", margin: "md",
@@ -432,34 +446,6 @@ async function handleEvent(event) {
         };
       });
 
-      // ตรวจสอบว่ายังมีรายการเหลือในฐานข้อมูลสำหรับกด "ค้นหาเพิ่ม" หรือไม่
-      const hasMore = count > (page + 1) * pageSize;
-      let footerContents = [];
-
-      if (hasMore) {
-        footerContents.push({
-          type: "button",
-          style: "primary",
-          color: COLORS.SECONDARY,
-          margin: "xs",
-          action: {
-            type: "message",
-            label: `🔄 ดูรายการเพิ่มเติม (${(page + 1) * pageSize}/${count})`,
-            text: `ค้นหาเพิ่ม:${searchKeyword}:${page + 1}`
-          }
-        });
-      }
-
-      footerContents.push({
-        type: "text",
-        text: "💡 พิมพ์ชื่อเมนู/ร้านอื่นต่อ หรือพิมพ์ 'กลับหน้าหลัก' ได้ครับ",
-        size: "xs",
-        color: "#9CA3AF",
-        margin: "md",
-        wrap: true,
-        align: "center"
-      });
-
       const searchCard = {
         type: "flex", altText: `ผลการค้นหา: ${searchKeyword}`,
         contents: {
@@ -467,8 +453,8 @@ async function handleEvent(event) {
           header: {
             type: "box", layout: "vertical", backgroundColor: COLORS.PRIMARY,
             contents: [
-              { type: "text", text: "🔍 ผลการค้นหาโภชนาการ", color: COLORS.WHITE, weight: "bold", size: "md" },
-              { type: "text", text: `คำค้นหา: "${searchKeyword}" (หน้า ${page + 1})`, color: "#CCFBF1", size: "xs", margin: "xs" }
+              { type: "text", text: "🔍 ผลการค้นหาโภชนาการ (คละร้าน)", color: COLORS.WHITE, weight: "bold", size: "md" },
+              { type: "text", text: `คำค้นหา: "${searchKeyword}"`, color: "#CCFBF1", size: "xs", margin: "xs" }
             ]
           },
           body: {
@@ -479,7 +465,28 @@ async function handleEvent(event) {
           },
           footer: {
             type: "box", layout: "vertical",
-            contents: footerContents
+            contents: [
+              {
+                type: "button",
+                style: "primary",
+                color: COLORS.SECONDARY,
+                margin: "xs",
+                action: {
+                  type: "message",
+                  label: "🎲 สุ่ม/สลับเมนูร้านอื่นอีกครั้ง",
+                  text: `ค้นหาเพิ่ม:${searchKeyword}`
+                }
+              },
+              {
+                type: "text",
+                text: "💡 พิมพ์ชื่อเมนู/ร้านอื่นต่อ หรือพิมพ์ 'กลับหน้าหลัก' ได้ครับ",
+                size: "xs",
+                color: "#9CA3AF",
+                margin: "md",
+                wrap: true,
+                align: "center"
+              }
+            ]
           }
         }
       };

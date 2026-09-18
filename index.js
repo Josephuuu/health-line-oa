@@ -16,6 +16,9 @@ const client = new line.messagingApi.MessagingApiClient({
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const app = express();
 
+// Memory Cache ป้องกัน State หลุดกรณี Supabase มีปัญหาเรื่อง Primary Key Constraint หรือ RLS
+const memoryStates = new Map();
+
 const COLORS = {
   PRIMARY: "#0D9488",
   SECONDARY: "#10B981",
@@ -183,37 +186,31 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 });
 
 async function handleEvent(event) {
-  // รองรับทั้ง Message Text และ Postback Data (เมื่อกดปุ่ม Rich Menu หรือ Flex Message)
   let userMessage = '';
   if (event.type === 'message' && event.message.type === 'text') {
     userMessage = event.message.text.trim();
   } else if (event.type === 'postback' && event.postback && event.postback.data) {
     userMessage = event.postback.data.trim();
   } else {
-    // ข้าม event ชนิดอื่น เช่น follow, unfollow, beacon ฯลฯ
     return;
   }
 
   const userId = event.source.userId;
 
   try {
-    // ใช้ maybeSingle() ป้องกัน Error PGRST116 กรณีเป็นผู้ใช้ใหม่ที่ยังไม่มีข้อมูลในระบบ
     const [stateRes, profileRes] = await Promise.all([
       supabase.from('user_states').select('state, context').eq('user_id', userId).maybeSingle(),
       supabase.from('user_profiles').select('*').eq('user_id', userId).maybeSingle()
     ]);
 
-    let stateData = stateRes.data;
+    // ใช้ State จาก Supabase หรือ Fallback ไปยัง Memory Cache ถ้า Supabase มีปัญหา
+    let stateData = stateRes.data || memoryStates.get(userId) || null;
     let profile = profileRes.data;
 
     let currentState = stateData ? stateData.state : 'MAIN_MENU';
     let currentContext = stateData && stateData.context ? stateData.context : {};
 
-    if (!stateData) {
-      await supabase.from('user_states').upsert({ user_id: userId, state: 'MAIN_MENU', context: {} }, { onConflict: 'user_id' });
-      currentState = 'MAIN_MENU';
-      currentContext = {};
-    }
+    console.log(`[User: ${userId}] CurrentState: ${currentState}, Message: "${userMessage}"`);
 
     const mainMenuText = `📌 เมนูหลักระบบดูแลสุขภาพ:\n\n` +
                          `1️⃣ [คำนวณแคลอรี่และโภชนาการ]\n` +
@@ -235,6 +232,16 @@ async function handleEvent(event) {
 
     // กรณีผู้ใช้ใหม่ยังไม่มี Profile ในระบบ
     if (!profile && currentState === 'MAIN_MENU') {
+      // ดักเคส: ถ้าผู้ใช้ส่ง "ชาย" หรือ "หญิง" เข้ามาขณะอยู่ MAIN_MENU ให้ดำเนินการต่อทันที ไม่วนถามซ้ำ!
+      if (userMessage === 'ชาย' || userMessage === 'หญิง') {
+        currentContext.gender = userMessage;
+        await updateState(userId, 'REG_AGE', currentContext);
+        return client.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{ type: 'text', text: `รับทราบครับ คุณเลือกเพศ "${userMessage}" 👍\n\nตอนนี้อายุเท่าไหร่แล้วครับ? (พิมพ์เป็นตัวเลข เช่น 16)` }]
+        });
+      }
+
       await updateState(userId, 'REG_GENDER', {});
       return client.replyMessage({
         replyToken: event.replyToken,
@@ -260,8 +267,9 @@ async function handleEvent(event) {
 
     const isAnsweringTest = currentState === 'MONTHLY_MENTAL' && ['0', '1', '2', '3'].includes(userMessage);
 
-    // รีเซ็ตเข้าสู่โหมดเมนูเมื่อผู้ใช้เลือกกดคำสั่งหลักใหม่
-    if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger || isUpdateBodyTrigger) && !isAnsweringTest && currentState !== 'MAIN_MENU' && !userMessage.startsWith('ค้นหาเพิ่ม:')) {
+    // รีเซ็ตเข้าสู่โหมดเมนูเมื่อผู้ใช้เลือกกดคำสั่งหลักใหม่ (เว้นแต่กำลังตอบแบบทดสอบ หรืออยู่ในกระบวนการลงทะเบียน)
+    const isRegistering = currentState.startsWith('REG_');
+    if ((isSearchTrigger || isMissionTrigger || isMentalTrigger || isFoodTrigger || isUpdateBodyTrigger) && !isAnsweringTest && !isRegistering && currentState !== 'MAIN_MENU' && !userMessage.startsWith('ค้นหาเพิ่ม:')) {
       currentState = 'MAIN_MENU';
       currentContext = {};
     }
@@ -561,7 +569,6 @@ async function handleEvent(event) {
           return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: '🌤️ วันนี้รู้สึกอย่างไรบ้างครับ? (เช่น สดชื่น, เหนื่อยล้า, เครียดเรื่องเรียน)' }] });
         }
 
-        // หากผู้ใช้พิมพ์อย่างอื่นขณะอยู่ในหน้าภารกิจ ให้แสดงการ์ดภารกิจพร้อมคำแนะนำ
         const fallbackCard = await buildMissionCard(userId, profile);
         return client.replyMessage({
           replyToken: event.replyToken,
@@ -737,11 +744,14 @@ async function handleEvent(event) {
         if (userMessage !== 'ชาย' && userMessage !== 'หญิง') return replyErr(event, 'เลือก "ชาย" หรือ "หญิง" จากปุ่มได้เลยครับ');
         currentContext.gender = userMessage;
         await updateState(userId, 'REG_AGE', currentContext);
-        return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: 'ตอนนี้อายุเท่าไหร่แล้วครับ? (พิมพ์เป็นตัวเลข เช่น 16)' }] });
+        return client.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{ type: 'text', text: `รับทราบครับ คุณเลือกเพศ "${userMessage}" 👍\n\nตอนนี้อายุเท่าไหร่แล้วครับ? (พิมพ์เป็นตัวเลข เช่น 16)` }]
+        });
 
       case 'REG_AGE': {
         const age = parseInt(userMessage);
-        if (isNaN(age) || age <= 0 || age > 110) return replyErr(event, 'โปรดระบุอายุเป็นตัวเลขครับ');
+        if (isNaN(age) || age <= 0 || age > 110) return replyErr(event, 'โปรดระบุอายุเป็นตัวเลขครับ (เช่น 16 หรือ 25)');
         currentContext.age = age;
 
         if (age >= 12 && age <= 18) {
@@ -836,7 +846,6 @@ async function handleEvent(event) {
         return client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: mainMenuText }] });
     }
 
-    // กรณีหลุดเงื่อนไขทั้งหมด แสดงเมนูหลักพร้อมปุ่มแนะนำ
     return client.replyMessage({
       replyToken: event.replyToken,
       messages: [
@@ -1034,7 +1043,30 @@ function sendMentalQuestion(event, qId, prefix) {
 }
 
 async function updateState(userId, state, context) {
-  await supabase.from('user_states').upsert({ user_id: userId, state, context }, { onConflict: 'user_id' });
+  const ctx = context || {};
+  // บันทึกลง Memory ทันที เพื่อป้องกัน State สูญหายเมื่อ Supabase เกิดปัญหา
+  memoryStates.set(userId, { state, context: ctx });
+
+  try {
+    const { error } = await supabase
+      .from('user_states')
+      .upsert({ user_id: userId, state, context: ctx }, { onConflict: 'user_id' });
+
+    if (error) {
+      console.warn(`[updateState] Supabase upsert error: ${error.message}. Trying update/insert fallback...`);
+      const { data: updated, error: updateErr } = await supabase
+        .from('user_states')
+        .update({ state, context: ctx })
+        .eq('user_id', userId)
+        .select();
+
+      if (updateErr || !updated || updated.length === 0) {
+        await supabase.from('user_states').insert({ user_id: userId, state, context: ctx });
+      }
+    }
+  } catch (err) {
+    console.error('[updateState] Exception:', err);
+  }
 }
 
 function replyErr(event, msg) {
@@ -1053,9 +1085,27 @@ async function saveUserProfile(userId, gender, age, user_type, chronic_disease, 
   if (bmi < 18.5) target_steps = 8000;
   else if (bmi >= 23.0) target_steps = 11000;
 
-  await supabase.from('user_profiles').upsert({
+  const profilePayload = {
     user_id: userId, gender, age, user_type, chronic_disease, dietary_restriction, lifestyle, weight, height, bmi, bmr, tdee, target_water_ml, target_steps
-  }, { onConflict: 'user_id' });
+  };
+
+  try {
+    const { error } = await supabase.from('user_profiles').upsert(profilePayload, { onConflict: 'user_id' });
+    if (error) {
+      console.warn('[saveUserProfile] Upsert error, trying update/insert fallback:', error.message);
+      const { data: updated, error: updateErr } = await supabase
+        .from('user_profiles')
+        .update(profilePayload)
+        .eq('user_id', userId)
+        .select();
+
+      if (updateErr || !updated || updated.length === 0) {
+        await supabase.from('user_profiles').insert(profilePayload);
+      }
+    }
+  } catch (err) {
+    console.error('[saveUserProfile] Exception:', err);
+  }
 }
 
 app.listen(process.env.PORT || 3000, () => {
